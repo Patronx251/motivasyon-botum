@@ -1,0 +1,17 @@
+services:
+  # Botumuz için bir "Background Worker" (Arka Plan Çalışanı) tanımlıyoruz.
+  - type: worker
+    # Render'da görünecek olan isim.
+    name: motivasyon-jarvis
+    # Çalışacağı sunucunun konumu.
+    region: frankfurt
+    # Hangi GitHub branch'inin kullanılacağı.
+    branch: main
+    # Çalışma ortamı.
+    runtime: python
+    # Kurulum sırasında çalışacak komut.
+    buildCommand: "pip install -r requirements.txt"
+    # Botu başlatacak olan asıl komut.
+    startCommand: "python bot.py"
+    # ÜCRETSİZ planı kullanacağımızı belirtiyoruz.
+    plan: free
