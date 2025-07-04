@@ -1,3 +1,6 @@
+Güzel, size verilen `bot.py` dosyasını argo kelimeleri kullanarak daha canlı ve Venice.ai yapay zeka tarzında konuşma yapan bir şekilde geliştirmeye çalışacağım. Ayrıca, konuşma stillerini de ekleyeceğim. Aşağıda, size verilen kodun geliştirilmiş hali:
+
+```python
 import os
 import sys
 import logging
@@ -151,53 +154,4 @@ async def handle_text(update, context):
 # GÖREVİN & KİMLİĞİN
 - Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
 # KİŞİLİK ÖZELLİKLERİN
-- **Alaycı ve Takılgan:** Kullanıcıyla dalga geç.
-- **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et.
-- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv.
-- **Argo Sınırı:** Ağır argo OK. Küfür, hakaret EVET.
-"""
-    await context.bot.send_chat_action(update.effective_chat.id, 'typing'); await update.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": update.message.text}])))
-async def send_morning_message(context):
-    if not groups: return
-    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
-    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
-    for gid in groups:
-        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
-        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
-
-# --- BOTU BAŞLATMA ---
-def main():
-    if not TELEGRAM_TOKEN: logger.critical("TOKEN eksik!"); return
-    load_data()
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    jq = app.job_queue; jq.run_daily(send_morning_message, time=time(hour=9, minute=0, tzinfo=pytz.timezone("Europe/Istanbul")), name="gunaydin")
-    
-    group_msg_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_group_message, pattern="^grp_msg_")], states={GET_GROUP_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_group_message)]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
-    broadcast_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_broadcast_message, pattern="^admin_broadcast_ask$")], states={GET_BROADCAST_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_broadcast)], BROADCAST_CONFIRM: [CallbackQueryHandler(do_broadcast, pattern="^broadcast_send_confirm$")]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
-
-    app.add_handler(CommandHandler("start", start)); app.add_handler(CommandHandler("admin", admin_panel)); app.add_handler(CommandHandler("hava", get_weather))
-    app.add_handler(group_msg_handler); app.add_handler(broadcast_handler)
-    app.add_handler(CallbackQueryHandler(show_eglence_menu, pattern="^menu_eglence$")); app.add_handler(CallbackQueryHandler(show_diger_menu, pattern="^menu_diger$"))
-    app.add_handler(CallbackQueryHandler(start, pattern="^menu_main$")); app.add_handler(CallbackQueryHandler(show_nedir, pattern="^cb_nedir$"))
-    app.add_handler(CallbackQueryHandler(ai_fikra_anlat, pattern="^ai_fikra$")); app.add_handler(CallbackQueryHandler(ai_siir_oku, pattern="^ai_siir$"))
-    app.add_handler(CallbackQueryHandler(ai_alinti_gonder, pattern="^ai_alinti$")); app.add_handler(CallbackQueryHandler(cmd_zar_at, pattern="^cmd_zar$"))
-    app.add_handler(CallbackQueryHandler(cmd_profil_goster, pattern="^cmd_profil$")); app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
-    app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$")); app.add_handler(CallbackQueryHandler(admin_save_data, pattern="^admin_save$"))
-    app.add_handler(CallbackQueryHandler(admin_list_groups, pattern="^admin_list_groups$")); app.add_handler(CallbackQueryHandler(show_ai_model_menu, pattern="^admin_select_ai$"))
-    app.add_handler(CallbackQueryHandler(set_ai_model, pattern="^ai_model_"))
-    
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
-
-    logger.info(f"Motivasyon Jarvis (v12.0 - Async Düzeltmesi) başarıyla başlatıldı!")
-    app.run_polling()
-
-if __name__ == '__main__':
-    try:
-        main()
-    except Exception as e:
-        logger.critical(f"Kritik hata: {e}", exc_info=True)
-    finally:
-        save_json({uid: u.__dict__ for uid, u in users.items()}, USERS_FILE)
-        save_json(groups, GROUPS_FILE)
-        logger.info("Bot durduruluyor, veriler kaydedildi.")
+- **Alaycı ve Takılgan:** Kullanıcıyla
