@@ -26,7 +26,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 VENICE_API_KEY = os.getenv("VENICE_API_KEY")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY") # YENİ
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 DEFAULT_AI_MODEL = os.getenv("DEFAULT_AI_MODEL", "openrouter")
 current_model = DEFAULT_AI_MODEL
 
@@ -34,9 +34,11 @@ USERS_FILE = os.path.join(BASE_DIR, "users_data.json")
 GROUPS_FILE = os.path.join(BASE_DIR, "groups.json")
 LOG_FILE = os.path.join(BASE_DIR, "bot.log")
 
-# --- Logging ve Veri Yönetimi ---
+# --- Logging Kurulumu ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", handlers=[logging.FileHandler(LOG_FILE, encoding='utf-8'), logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
+
+# --- Veri Yönetimi ---
 users, groups = {}, {}
 class User:
     def __init__(self, name=""): self.name = name
@@ -64,14 +66,12 @@ def imzali(metin): return f"{metin}\n\n🤖 MOTİVASYON JARVIS | Kurucu: ✘𝙐
 
 async def _get_openrouter_response(prompts):
     if not OPENROUTER_API_KEY: return "OpenRouter API anahtarı eksik."
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
-    payload = {"model": "google/gemini-flash-1.5", "messages": prompts}
+    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-flash-1.5", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
-    url = "https://api.venice.ai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
-    payload = {"model": "venice/model-adi", "messages": prompts} # Model adını Venice AI dokümantasyonuna göre değiştir
+    url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
+    payload = {"model": "venice/model-adi", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def get_ai_response(prompts):
     try:
@@ -87,50 +87,22 @@ def get_ai_model_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardBu
 
 GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
 
-# --- YENİ: Hava Durumu Fonksiyonu ---
 async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not WEATHER_API_KEY:
-        await update.message.reply_text(imzali("Hava durumu servisi için API anahtarı ayarlanmamış. Kurucum Uğur bu işi çözer. 😎"))
-        return
-    if not context.args:
-        await update.message.reply_text(imzali("Hangi şehrin havasını merak ettiğini de söylesen keşke? Kullanım: `/hava İstanbul`"))
-        return
-
+    if not WEATHER_API_KEY: await update.message.reply_text(imzali("Hava durumu servisi için API anahtarı ayarlanmamış.")); return
+    if not context.args: await update.message.reply_text(imzali("Kullanım: `/hava İstanbul`")); return
     city = " ".join(context.args)
-    # OpenWeatherMap API URL'i. Farklı bir servis kullanıyorsanız bu satırı değiştirin.
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=tr"
-
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url)
-            response.raise_for_status() # 4xx veya 5xx hataları için exception fırlatır
-        
-        data = response.json()
-        weather_icons = { "01": "☀️", "02": "🌤️", "03": "☁️", "04": "☁️", "09": "🌧️", "10": "🌦️", "11": "⛈️", "13": "❄️", "50": "🌫️"}
-        icon = weather_icons.get(data['weather'][0]['icon'][:2], "🌍")
-        
-        text = (
-            f"<b>{data['name']}, {data['sys']['country']} için Hava Durumu</b> {icon}\n\n"
-            f"🌡️ <b>Sıcaklık:</b> {data['main']['temp']:.1f}°C\n"
-            f"🤔 <b>Hissedilen:</b> {data['main']['feels_like']:.1f}°C\n"
-            f"💧 <b>Nem:</b> %{data['main']['humidity']}\n"
-            f"📜 <b>Durum:</b> {data['weather'][0]['description'].title()}"
-        )
+        async with httpx.AsyncClient() as client: r = await client.get(url); r.raise_for_status()
+        data = r.json()
+        icon = {"01":"☀️","02":"🌤️","03":"☁️","04":"☁️","09":"🌧️","10":"🌦️","11":"⛈️","13":"❄️","50":"🌫️"}.get(data['weather'][0]['icon'][:2], "🌍")
+        text = f"<b>{data['name']}, {data['sys']['country']} {icon}</b>\n\n🌡️ <b>Sıcaklık:</b> {data['main']['temp']:.1f}°C\n🤔 <b>Hissedilen:</b> {data['main']['feels_like']:.1f}°C\n💧 <b>Nem:</b> %{data['main']['humidity']}\n📜 <b>Durum:</b> {data['weather'][0]['description'].title()}"
         await update.message.reply_text(imzali(text), parse_mode=ParseMode.HTML)
-
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            await update.message.reply_text(imzali(f"'{city}' diye bir yer bulamadım, haritadan mı sildiler n'aptılar? 🗺️"))
-        elif e.response.status_code == 401:
-            await update.message.reply_text(imzali("Hava durumu servisinin API anahtarı geçersiz gibi. Kurucum Uğur'a haber verin, o halleder. 🔑"))
-        else:
-            await update.message.reply_text(imzali(f"Hava durumu servisinde bir sorun var gibi görünüyor. (Hata Kodu: {e.response.status_code})"))
-    except Exception as e:
-        logger.error(f"Hava durumu alınırken genel hata: {e}")
-        await update.message.reply_text(imzali("Hava durumu verilerini alırken bilinmeyen bir hata oluştu."))
-
-
-# --- Diğer Tüm Fonksiyonlar (Aynı) ---
+        if e.response.status_code == 404: await update.message.reply_text(imzali(f"'{city}' diye bir yer bulamadım. 🗺️"))
+        elif e.response.status_code == 401: await update.message.reply_text(imzali("Hava durumu API anahtarı geçersiz. 🔑"))
+        else: await update.message.reply_text(imzali(f"Servis hatası: {e.response.status_code}"))
+    except Exception as e: logger.error(f"Hava durumu hatası: {e}"); await update.message.reply_text(imzali("Bilinmeyen bir hata oluştu."))
 async def start(update, context): get_or_create_user(update.effective_user.id, update.effective_user.first_name); text = f"Merhaba <b>{update.effective_user.first_name}</b>, yine ne istiyorsun bakalım? 😉"; await (update.callback_query.edit_message_text if update.callback_query else update.message.reply_text)(imzali(text), reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
 async def show_menu(update, text, keyboard): await update.callback_query.edit_message_text(imzali(text), reply_markup=keyboard, parse_mode=ParseMode.HTML)
 async def show_eglence_menu(update, context): await show_menu(update, "Eğlenmeye mi geldin? İyi seçim. 😎", get_eglence_menu_keyboard())
@@ -149,16 +121,13 @@ async def admin_panel(update, context):
     else: await update.message.reply_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
 async def show_ai_model_menu(update, context): await show_menu(update, f"Aktif AI: <b>{current_model.upper()}</b>\nYeni modeli seç:", get_ai_model_menu_keyboard())
 async def set_ai_model(update, context):
-    global current_model
-    current_model = update.callback_query.data.split('_')[-1]
-    logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True)
-    await admin_panel(update, context)
+    global current_model; current_model = update.callback_query.data.split('_')[-1]
+    logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True); await admin_panel(update, context)
 async def admin_stats(update, context): await show_menu(update, f"📊 İstatistikler:\n- Kullanıcı: {len(users)}\n- Grup: {len(groups)}", get_admin_menu_keyboard())
 async def admin_save_data(update, context): save_json({uid: u.__dict__ for uid, u in users.items()}, USERS_FILE); save_json(groups, GROUPS_FILE); await update.callback_query.answer("✅ Veriler diske kaydedildi!", show_alert=True)
 async def admin_list_groups(update, context):
     if not groups: await update.callback_query.answer("Bot henüz bir gruba eklenmemiş.", show_alert=True); return
-    keyboard = [[InlineKeyboardButton(g['title'], callback_data=f"grp_msg_{gid}")] for gid, g in groups.items()]
-    keyboard.append([InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]); await show_menu(update, "Mesaj göndermek için bir grup seç:", InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton(g['title'], callback_data=f"grp_msg_{gid}")] for gid, g in groups.items()]; keyboard.append([InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]); await show_menu(update, "Mesaj göndermek için bir grup seç:", InlineKeyboardMarkup(keyboard))
 async def ask_group_message(update, context): context.user_data['target_group_id'] = int(update.callback_query.data.split('_')[-1]); await show_menu(update, f"'{groups.get(context.user_data['target_group_id'], {}).get('title')}' grubuna göndermek için mesajınızı yazın.", None); return GET_GROUP_MSG
 async def send_group_message(update, context):
     gid = context.user_data.pop('target_group_id', None)
@@ -196,6 +165,7 @@ async def send_morning_message(context):
         try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
         except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
 
+# --- BOTU BAŞLATMA ---
 def main():
     if not TELEGRAM_TOKEN: logger.critical("TOKEN eksik!"); return
     load_data()
@@ -205,9 +175,7 @@ def main():
     group_msg_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_group_message, pattern="^grp_msg_")], states={GET_GROUP_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_group_message)]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
     broadcast_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_broadcast_message, pattern="^admin_broadcast_ask$")], states={GET_BROADCAST_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_broadcast)], BROADCAST_CONFIRM: [CallbackQueryHandler(do_broadcast, pattern="^broadcast_send_confirm$")]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CommandHandler("hava", get_weather)) # YENİ HAVA DURUMU KOMUTU
+    app.add_handler(CommandHandler("start", start)); app.add_handler(CommandHandler("admin", admin_panel)); app.add_handler(CommandHandler("hava", get_weather))
     app.add_handler(group_msg_handler); app.add_handler(broadcast_handler)
     app.add_handler(CallbackQueryHandler(show_eglence_menu, pattern="^menu_eglence$")); app.add_handler(CallbackQueryHandler(show_diger_menu, pattern="^menu_diger$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^menu_main$")); app.add_handler(CallbackQueryHandler(show_nedir, pattern="^cb_nedir$"))
@@ -221,10 +189,15 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v11.0 - Hava Durumu & Çoklu AI) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v12.0 - Async Düzeltmesi) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
-    try: main()
-    except Exception as e: logger.critical(f"Kritik hata: {e}", exc_info=True)
-    finally: save_json({uid: u.__dict__ for uid, u in users.items()}, USERS_FILE); save_json(groups, GROUPS_FILE); logger.info("Bot durduruluyor, veriler kaydedildi.")
+    try:
+        main()
+    except Exception as e:
+        logger.critical(f"Kritik hata: {e}", exc_info=True)
+    finally:
+        save_json({uid: u.__dict__ for uid, u in users.items()}, USERS_FILE)
+        save_json(groups, GROUPS_FILE)
+        logger.info("Bot durduruluyor, veriler kaydedildi.")
