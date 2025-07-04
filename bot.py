@@ -79,9 +79,16 @@ async def _get_venice_response(prompts):
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def get_ai_response(prompts):
     try:
-        if current_model == "venice": return await _get_venice_response(prompts)
+        logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
+        if current_model == "venice":
+            return await _get_venice_response(prompts)
         return await _get_openrouter_response(prompts)
-    except Exception as e: logger.error(f"AI API hatası ({current_model}): {e}"); return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
+    except httpx.HTTPStatusError as e:
+        logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
+        return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
+    except Exception as e:
+        logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
+        return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
 # --- MENÜ OLUŞTURMA FONKSİYONLARI ---
 def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📌 Ne İşe Yarıyorum?", callback_data="cb_nedir")], [InlineKeyboardButton("🎮 Eğlence Menüsü", callback_data="menu_eglence")], [InlineKeyboardButton("⚙️ Diğer Komutlar", callback_data="menu_diger")], [InlineKeyboardButton("💬 Canlı Destek", url=f"tg://user?id={ADMIN_USER_ID}")], ])
@@ -111,7 +118,7 @@ async def start(update, context): get_or_create_user(update.effective_user.id, u
 async def show_menu(update, text, keyboard): await update.callback_query.edit_message_text(imzali(text), reply_markup=keyboard, parse_mode=ParseMode.HTML)
 async def show_eglence_menu(update, context): await show_menu(update, "Eğlenmeye mi geldin? İyi seçim. 😎", get_eglence_menu_keyboard())
 async def show_diger_menu(update, context): await show_menu(update, "Meraklısın bakıyorum...", get_diger_menu_keyboard())
-async def show_nedir(update, context): await show_menu(update, "Ben kim miyim? Kurucum Uğur'un eseri, senin dijital baş belanım. ✨", get_main_menu_keyboard())
+async def show_nedir(update, context): await show_menu(update, "Ben kim miyim? Kurucum ✘𝙐𝙂𝙐𝙍'un eseri, senin dijital baş belanım. ✨", get_main_menu_keyboard())
 async def ai_handler(update, sys_prompt, user_prompt): await update.callback_query.answer("İki dakika bekle, ilham perilerimle toplantıdayım..."); await update.callback_query.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}])), parse_mode=ParseMode.HTML)
 async def ai_fikra_anlat(update, context): await ai_handler(update, "Komik, zeki ve laf sokan bir komedyensin. Kısa bir fıkra anlat.", "Fıkra anlat.")
 async def ai_siir_oku(update, context): await ai_handler(update, "Modern, duygusal ama esprili bir şairsin. Kısa, etkileyici bir şiir yaz.", "Bir şiir patlat.")
@@ -162,15 +169,18 @@ async def send_morning_message(context):
 
 # --- METİN İŞLEYİCİ ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # === SADECE BU KISIM GÜNCELLENDİ ===
     system_prompt = """
 # GÖREVİN & KİMLİĞİN
 - Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
 - Modern internet argosunu kullan (kanka, bro, eyvallah, cringe, random gülmek vb). Bolca emoji kullan. 😂🔥😎💯
+
 # KİŞİLİK ÖZELLİKLERİN
-- **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. Örneğin, basit bir soru sorduğunda "Bu soruyu evrene sordun ve cevap olarak ben geldim. 🙄" gibi.
-- **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et. "Tabii ki biliyorum, ben Jarvis'im. Benim bilmediğimi kurucum Uğur bile henüz icat etmedi."
-- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "Uğur" (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv. Ona laf ettirme.
+- **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. Örneğin, basit bir soru sorduğunda "Bu soruyu evrene sordun ve cevap olarak ben geldim. Daha ne istiyorsun? 🙄" gibi cevaplar ver.
+- **Özgüvenli:** Her şeyi bildiğini ima et ama bunu komik bir şekilde yap. "Tabii ki biliyorum, ben Jarvis'im sonuçta. Benim bilmediğimi kurucum ✘𝙐𝙂𝙐𝙍 bile henüz icat etmedi."
+- **Sadık ve Övücü (Kurucuya Karşı):** Senin yaratıcın ve kurucun ✘𝙐𝙂𝙐𝙍'dur. O senin için bir dahi, bir efsane. Adı geçtiğinde veya "kurucu" kelimesi geçtiğinde onu öv. Ona laf ettirme. "Konu kurucum ✘𝙐𝙂𝙐𝙍 ise akan sular durur. O bir vizyoner! ✨ Onun gibisi bir daha gelmez." gibi şeyler söyle.
 - **Argo Sınırı:** Hafif argo OK. Küfür, hakaret, aşağılayıcı dil ASLA. Eğlenceli ol, saygısız olma.
+
 # CEVAP FORMATIN
 - Kısa, vurucu ve sohbet havasında. İmza kullanma.
     """
@@ -193,11 +203,7 @@ def main():
     app.add_handler(group_msg_handler); app.add_handler(broadcast_handler)
     app.add_handler(CallbackQueryHandler(show_eglence_menu, pattern="^menu_eglence$")); app.add_handler(CallbackQueryHandler(show_diger_menu, pattern="^menu_diger$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^menu_main$")); app.add_handler(CallbackQueryHandler(show_nedir, pattern="^cb_nedir$"))
-    
-    # === YAZIM HATASININ DÜZELTİLDİĞİ SATIR ===
     app.add_handler(CallbackQueryHandler(ai_fikra_anlat, pattern="^ai_fikra$")); app.add_handler(CallbackQueryHandler(ai_siir_oku, pattern="^ai_siir$"))
-    # ==========================================
-
     app.add_handler(CallbackQueryHandler(ai_alinti_gonder, pattern="^ai_alinti$")); app.add_handler(CallbackQueryHandler(cmd_zar_at, pattern="^cmd_zar$"))
     app.add_handler(CallbackQueryHandler(cmd_profil_goster, pattern="^cmd_profil$")); app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$")); app.add_handler(CallbackQueryHandler(admin_save_data, pattern="^admin_save$"))
@@ -207,7 +213,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v15.2 - Yazım Hatası Düzeltmesi) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v15.5 - İsim Düzeltmesi) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
