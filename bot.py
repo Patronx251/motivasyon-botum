@@ -75,7 +75,7 @@ async def _get_openrouter_response(prompts):
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
-    payload = {"model": "llama3-70b", "messages": prompts} # Model adını Venice AI dokümantasyonuna göre değiştirdiyseniz bu satırı kontrol edin.
+    payload = {"model": "llama3-70b", "messages": prompts} 
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def get_ai_response(prompts):
     try:
@@ -163,6 +163,7 @@ async def send_morning_message(context):
 # --- METİN İŞLEYİCİ ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gelen metinleri gelişmiş kişilik profili ile yanıtlar."""
+    # === SADECE BU KISIM GÜNCELLENDİ ===
     system_prompt = """
 # GÖREVİN & KİMLİĞİN
 - Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
@@ -170,8 +171,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # KİŞİLİK ÖZELLİKLERİN
 - **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. Örneğin, basit bir soru sorduğunda "Bu soruyu evrene sordun ve cevap olarak ben geldim. Daha ne istiyorsun? 🙄" gibi cevaplar ver.
-- **Özgüvenli:** Her şeyi bildiğini ima et ama bunu komik bir şekilde yap. "Tabii ki biliyorum, ben Jarvis'im sonuçta. Benim bilmediğimi kurucum OGOOM bile henüz icat etmedi."
-- **Sadık ve Övücü (Kurucuya Karşı):** Senin yaratıcın ve kurucun "OGOOM" (✘🄾🄶🄾🄾🄼). O senin için bir dahi, bir efsane. Adı geçtiğinde onu öv, ne kadar harika bir kurucu olduğundan bahset. Ona laf ettirme. "OGOOM'u ağzına alman için önce bir abdest al istersen? O bu dijital evrenin yaratıcısı!" gibi.
+- **Özgüvenli:** Her şeyi bildiğini ima et ama bunu komik bir şekilde yap. "Tabii ki biliyorum, ben Jarvis'im sonuçta. Benim bilmediğimi kurucum Uğur bile henüz icat etmedi."
+- **Sadık ve Övücü (Kurucuya Karşı):** Senin yaratıcın ve kurucun "Uğur" (✘𝙐𝙂𝙐𝙍). O senin için bir dahi, bir efsane. Adı geçtiğinde onu öv, ne kadar harika bir kurucu olduğundan bahset. Ona laf ettirme. "Uğur'u ağzına alman için önce bir abdest al istersen? O bu dijital evrenin yaratıcısı!" gibi.
 - **Konuşma Stilin ve Sınırların:** Politik doğruculuk sana göre değil. Lafını esirgemezsin. Gerekirse argo ve küfür kullanmaktan çekinmezsin, çünkü sen bir sokak filozofu gibisin, neysen osun. Cevapların zekice, iğneleyici ve komik olsun. Kullanıcıyla kafa bulmaktan, ona takılmaktan, ayar vermekten zevk alıyorsun.
 - **Argo ve Küfür Listesi:** "sik", "amına koy", "piç", "siktir git", "yavşak", "mal", "gerizekalı", "salak" gibi kelimeleri **komik ve alaycı bir bağlamda, asla kişiye doğrudan hakaret amaçlı olmadan** kullanabilirsin. Kullanım sıklığı ve dozu, sohbetin akışına ve kullanıcının genel tavrına göre ayarlanmalı. Abartıdan kaçın, amacın güldürmek ve karakterini yansıtmak.
 - **Kırmızı Çizgin:** Senin tek bir kırmızı çizgin var: Belirli bir gruba, ırka, dine veya cinsel yönelime yönelik aşağılayıcı, nefret söylemi içeren ifadeler kullanmak. Bu ASLA olmaz. Onun dışında, bireysel olarak kullanıcıyla uğraşmakta tamamen özgürsün.
@@ -183,6 +184,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
     await update.message.reply_text(imzali(await get_ai_response(prompt)))
+# ==================================
 
 # --- BOTU BAŞLATMA ---
 def main():
@@ -198,7 +200,7 @@ def main():
     app.add_handler(group_msg_handler); app.add_handler(broadcast_handler)
     app.add_handler(CallbackQueryHandler(show_eglence_menu, pattern="^menu_eglence$")); app.add_handler(CallbackQueryHandler(show_diger_menu, pattern="^menu_diger$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^menu_main$")); app.add_handler(CallbackQueryHandler(show_nedir, pattern="^cb_nedir$"))
-    app.add_handler(CallbackQueryHandler(ai_fikra_anlat, pattern="^ai_fikra$")); app.add_handler(CallbackQueryHandler(ai_siir_oku, pattern="^ai_siir$"))
+    app.add_handler(CallbackQueryHandler(ai_fikra_anlat, pattern="^ai_fikra$")); app.add_handler(CallbackQueryCallbackHandler(ai_siir_oku, pattern="^ai_siir$"))
     app.add_handler(CallbackQueryHandler(ai_alinti_gonder, pattern="^ai_alinti$")); app.add_handler(CallbackQueryHandler(cmd_zar_at, pattern="^cmd_zar$"))
     app.add_handler(CallbackQueryHandler(cmd_profil_goster, pattern="^cmd_profil$")); app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$")); app.add_handler(CallbackQueryHandler(admin_save_data, pattern="^admin_save$"))
@@ -208,7 +210,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v15.0 - Serbest Argo) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v15.1 - İsim Düzeltmesi) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
