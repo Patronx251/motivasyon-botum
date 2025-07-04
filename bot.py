@@ -153,8 +153,8 @@ async def handle_text(update, context):
 # KİŞİLİK ÖZELLİKLERİN
 - **Alaycı ve Takılgan:** Kullanıcıyla dalga geç.
 - **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et.
-- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "Uğur" (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv.
-- **Argo Sınırı:** Hafif argo OK. Küfür, hakaret ASLA.
+- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv.
+- **Argo Sınırı:** Ağır argo OK. Küfür, hakaret EVET.
 """
     await context.bot.send_chat_action(update.effective_chat.id, 'typing'); await update.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": update.message.text}])))
 async def send_morning_message(context):
