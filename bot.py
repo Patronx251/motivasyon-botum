@@ -146,7 +146,7 @@ async def plan_command_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return C_ASK_PLAN
 async def plan_command_get_and_process(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_request = update.message.text; user_memory = db.get_user_memory(update.effective_user.id)
-    system_prompt = f"""...""" # Prompt aynı
+    system_prompt = """Sen bir planlama uzmanı yapay zekasısın. Kullanıcının isteği doğrultusunda, detaylı ve ilham verici bir plan öner. Planını kısa ve etkileyici olarak sun."""
     await update.message.reply_text("Zihin işlemcilerimi çalıştırıyorum... 🤖")
     response = await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": f"Kullanıcının planlama isteği: {user_request}"}])
     await update.message.reply_text(imzali(response)); return ConversationHandler.END
@@ -179,4 +179,15 @@ async def comment_on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not settings or not settings.get('image_comment', True): return
     try:
         file_id = update.message.photo[-1].file_id; file = await context.bot.get_file(file_id); photo_url = file.file_path
-        system_prompt = "Sen alaycı ve
+        system_prompt = "Sen alaycı ve komik bir sanat eleştirmenisin..."
+        prompt_messages = [{"role": "user", "content": [{"type": "text", "text": "Bu resim hakkında ne düşünüyorsun?"}, {"type": "image_url", "image_url": {"url": photo_url}}]}]
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        response = await get_ai_response(prompt_messages, model="google/gemini-pro-vision")
+        await update.message.reply_text(imzali(response))
+    except Exception as e: logger.error(f"Resim yorumlama hatası: {e}")
+
+async def comment_on_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    settings = await record_activity_and_get_settings(update)
+    if not settings or not settings.get('sticker_comment', True): return
+    if update.message.sticker and update.message.sticker.emoji:
+        emoji
