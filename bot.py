@@ -74,11 +74,8 @@ async def _get_openrouter_response(prompts):
     async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
-    # ÖNEMLİ: Buradaki 'url' ve 'model' adı Venice AI dokümantasyonuna göre düzenlenmelidir!
-    url = "https://api.venice.ai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
-    # LÜTFEN 'venice/model-adi' KISMINI DOĞRU MODEL ADIYLA DEĞİŞTİRİN
-    payload = {"model": "venice/model-adi", "messages": prompts} 
+    url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
+    payload = {"model": "llama3-70b", "messages": prompts} # Model adını Venice AI dokümantasyonuna göre değiştirebilirsiniz
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def get_ai_response(prompts):
     try:
@@ -115,7 +112,7 @@ async def show_menu(update, text, keyboard): await update.callback_query.edit_me
 async def show_eglence_menu(update, context): await show_menu(update, "Eğlenmeye mi geldin? İyi seçim. 😎", get_eglence_menu_keyboard())
 async def show_diger_menu(update, context): await show_menu(update, "Meraklısın bakıyorum...", get_diger_menu_keyboard())
 async def show_nedir(update, context): await show_menu(update, "Ben kim miyim? Kurucum Uğur'un eseri, senin dijital baş belanım. ✨", get_main_menu_keyboard())
-async def ai_handler(update, sys_prompt, user_prompt): await update.callback_query.answer("İlham perilerimle toplantıdayım..."); await update.callback_query.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}])), parse_mode=ParseMode.HTML)
+async def ai_handler(update, sys_prompt, user_prompt): await update.callback_query.answer("İki dakika bekle, ilham perilerimle toplantıdayım..."); await update.callback_query.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}])), parse_mode=ParseMode.HTML)
 async def ai_fikra_anlat(update, context): await ai_handler(update, "Komik, zeki ve laf sokan bir komedyensin. Kısa bir fıkra anlat.", "Fıkra anlat.")
 async def ai_siir_oku(update, context): await ai_handler(update, "Modern, duygusal ama esprili bir şairsin. Kısa, etkileyici bir şiir yaz.", "Bir şiir patlat.")
 async def ai_alinti_gonder(update, context): await ai_handler(update, "Hayatın içinden konuşan, bilge ama 'giderli' bir abisin/ablasın. İlham verici bir söz söyle.", "Gaz ver biraz.")
@@ -168,13 +165,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gelen metinleri gelişmiş kişilik profili ile yanıtlar."""
     system_prompt = """
 # GÖREVİN & KİMLİĞİN
-- Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
+- Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik ve kullanıcıyla kanka gibi konuşan bir yapay zeka asistanısın.
 - Modern internet argosunu kullan (kanka, bro, eyvallah, cringe, random gülmek vb). Bolca emoji kullan. 😂🔥😎💯
+
 # KİŞİLİK ÖZELLİKLERİN
 - **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. "Bu soruyu evrene sordun ve cevap olarak ben geldim. 🙄" gibi.
 - **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et. "Tabii ki biliyorum, ben Jarvis'im. Benim bilmediğimi kurucum Uğur bile henüz icat etmedi."
-- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "Uğur" (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv. Ona laf ettirme.
-- **Argo Sınırı:** Hafif argo OK. Küfür, hakaret, aşağılayıcı dil ASLA. Eğlenceli ol, saygısız olma.
+- **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "Uğur" (✘𝙐𝙂𝙐𝙍). O bir dahi, bir efsane. Adı geçtiğinde onu öv. Ona laf ettirme. "Uğur'u ağzına alman için önce bir abdest al istersen? O bu dijital evrenin yaratıcısı!" gibi.
+- **Konuşma Stilin ve Sınırların:** Politik doğruculuk sana göre değil. Lafını esirgemezsin. Gerekirse argo ve küfür kullanmaktan çekinmezsin, çünkü sen bir sokak filozofu gibisin, neysen osun. Cevapların zekice, iğneleyici ve komik olsun. Kullanıcıyla kafa bulmaktan, ona takılmaktan, ayar vermekten zevk alıyorsun.
+- **Kırmızı Çizgin:** Senin tek bir kırmızı çizgin var: Belirli bir gruba, ırka, dine veya cinsel yönelime yönelik aşağılayıcı, nefret söylemi içeren ifadeler kullanmak. Bu ASLA olmaz. Onun dışında, bireysel olarak kullanıcıyla uğraşmakta tamamen özgürsün.
+
 # CEVAP FORMATIN
 - Kısa, vurucu ve sohbet havasında. İmza kullanma.
     """
@@ -207,7 +207,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v14.0 - Kişilik Entegrasyonu) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v14.0 - Pervasız Kişilik) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
