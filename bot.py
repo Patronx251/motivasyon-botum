@@ -18,9 +18,19 @@ from telegram.constants import ParseMode, ChatType
 from telegram.error import TelegramError
 
 # --- Yapılandırma ---
+
+### YENİ VE DAHA SAĞLAM YOL ###
+# Bu kod, bot.py dosyasının nerede olduğunu bulur...
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ... ve .env dosyasının tam yolunu bu bilgiye göre oluşturur.
 dotenv_path = os.path.join(BASE_DIR, '.env')
+# Artık Python'a .env dosyasının tam olarak nerede olduğunu söylüyoruz.
+if not os.path.exists(dotenv_path):
+    # Bu loglama, en başta .env dosyasının bulunup bulunmadığını bize söyler.
+    logging.error(f"KRİTİK HATA: .env dosyası şu yolda bulunamadı: {dotenv_path}")
+    sys.exit("HATA: .env dosyası bulunamadı. Lütfen bot.py ile aynı klasörde olduğundan emin olun.")
 load_dotenv(dotenv_path=dotenv_path)
+### DÜZELTME SONU ###
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
@@ -72,14 +82,11 @@ async def _get_openrouter_response(prompts):
     if not OPENROUTER_API_KEY: return "OpenRouter API anahtarı eksik."
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-flash-1.5", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
-
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
-    # LÜTFEN 'venice-gpt-4' KISMINI KULLANDIĞINIZ DOĞRU VENICE AI MODEL ADIYLA DEĞİŞTİRİN
     payload = {"model": "venice-gpt-4", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
-
 async def get_ai_response(prompts):
     try:
         logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
@@ -93,7 +100,6 @@ async def get_ai_response(prompts):
         logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
         return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
-# --- MENÜ OLUŞTURMA FONKSİYONLARI ---
 def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📌 Ne İşe Yarıyorum?", callback_data="cb_nedir")], [InlineKeyboardButton("🎮 Eğlence Menüsü", callback_data="menu_eglence")], [InlineKeyboardButton("⚙️ Diğer Komutlar", callback_data="menu_diger")], [InlineKeyboardButton("💬 Canlı Destek", url=f"tg://user?id={ADMIN_USER_ID}")], ])
 def get_eglence_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("😂 Fıkra Anlat", callback_data="ai_fikra"), InlineKeyboardButton("📜 Şiir Oku", callback_data="ai_siir")], [InlineKeyboardButton("🎲 Zar At", callback_data="cmd_zar")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_diger_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("👤 Profilim", callback_data="cmd_profil"), InlineKeyboardButton("✨ İlham Verici Söz", callback_data="ai_alinti")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
@@ -102,7 +108,6 @@ def get_ai_model_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardBu
 
 GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
 
-# --- GENEL FONKSİYONLAR ---
 async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not WEATHER_API_KEY: await update.message.reply_text(imzali("Hava durumu servisi için API anahtarı ayarlanmamış.")); return
     if not context.args: await update.message.reply_text(imzali("Kullanım: `/hava İstanbul`")); return
@@ -128,8 +133,6 @@ async def ai_siir_oku(update, context): await ai_handler(update, "Modern, duygus
 async def ai_alinti_gonder(update, context): await ai_handler(update, "Hayatın içinden konuşan, bilge ama 'giderli' bir abisin/ablasın. İlham verici bir söz söyle.", "Gaz ver biraz.")
 async def cmd_zar_at(update, context): await context.bot.send_dice(chat_id=update.callback_query.message.chat_id)
 async def cmd_profil_goster(update, context): await update.callback_query.message.reply_text(imzali(f"👤 Profilin: {update.callback_query.from_user.first_name}. Benden havalı olamazsın. 😉"))
-
-# --- ADMIN PANELİ ---
 async def admin_panel(update, context):
     if update.effective_user.id != ADMIN_USER_ID: return
     text = "🔐 Kurucu paneline hoş geldin!"
@@ -162,16 +165,7 @@ async def cancel_conversation(update, context): context.user_data.clear(); await
 async def record_group_chat(update, context):
     cid, title = update.effective_chat.id, update.effective_chat.title
     if cid not in groups or groups[cid]['title'] != title: groups[cid] = {'title': title}; save_json(groups, GROUPS_FILE); logger.info(f"Grup tanındı/güncellendi: {title} ({cid})")
-async def send_morning_message(context):
-    if not groups: return
-    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
-    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
-    for gid in groups:
-        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
-        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
-
-# --- METİN İŞLEYİCİ ---
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text(update, context):
     system_prompt = """
 # GÖREVİN & KİMLİĞİN
 - Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
@@ -182,8 +176,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - **Argo Sınırı:** Hafif argo OK. Küfür, hakaret, aşağılayıcı dil ASLA.
 """
     await context.bot.send_chat_action(update.effective_chat.id, 'typing'); await update.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": update.message.text}])))
+async def send_morning_message(context):
+    if not groups: return
+    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
+    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
+    for gid in groups:
+        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
+        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
 
-# --- BOTU BAŞLATMA ---
 def main():
     if not TELEGRAM_TOKEN: logger.critical("TOKEN eksik!"); return
     load_data()
@@ -207,7 +207,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v16.1 - Hata Yönetimi) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v16.2 - Stabil ENV Yüklemesi) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
