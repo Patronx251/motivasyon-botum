@@ -11,10 +11,10 @@ from datetime import time
 import pytz
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
-    CallbackQueryHandler, ContextTypes
+    CallbackQueryHandler, ContextTypes, ConversationHandler
 )
 from telegram.constants import ParseMode
 
@@ -34,6 +34,7 @@ logger = logging.getLogger("DarkJarvis")
 kullanicilar = {}
 kullanici_mesaj_sayisi = {}
 aktif_karanlik = set()
+grups = {}
 
 # --- ARAÇLAR ---
 def imzali(metin):
@@ -45,7 +46,18 @@ def get_keyboard():
         [InlineKeyboardButton("🎮 Eğlence", callback_data="eglence")],
         [InlineKeyboardButton("🔮 Fal & Tarot", callback_data="fal")],
         [InlineKeyboardButton("🎵 Müzik Ara", callback_data="muzik")],
-        [InlineKeyboardButton("📊 Etkileşim Analizi", callback_data="analiz")]
+        [InlineKeyboardButton("📊 Etkileşim Analizi", callback_data="analiz")],
+        [InlineKeyboardButton("⚙️ Admin Paneli", callback_data="admin")]
+    ])
+
+def get_admin_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 Herkese Duyuru", callback_data="duyuru")],
+        [InlineKeyboardButton("📣 Grupları Yönet", callback_data="gruplar")],
+        [InlineKeyboardButton("💬 Mesaj Gönder", callback_data="mesaj_gonder"), InlineKeyboardButton("📷 Fotoğraf Gönder", callback_data="foto_gonder")],
+        [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="veri_kaydet")],
+        [InlineKeyboardButton("🧠 AI Model Seç", callback_data="ai_model")],
+        [InlineKeyboardButton("◀️ Geri", callback_data="geri")]
     ])
 
 # --- KOMUTLAR ---
@@ -78,32 +90,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "karanlik":
         aktif_karanlik.add(uid)
-        await query.edit_message_text(imzali("☠️ <b>Karanlık Mod</b> aktif edildi. Artık filtre yok, maskeler düştü!"), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("☠️ <b>Karanlık Mod</b> aktif edildi. Artık filtre yok, maskeler düştü!"), parse_mode=ParseMode.HTML)
 
-    elif query.data == "eglence":
-        metin = random.choice([
-            "😂 Doktor: Sigarayı bırakman lazım. Hasta: Yerine ne içeyim hocam?",
-            "🤣 Hayat kısa, gülümsemeye çalış... ama çok da değil, saçma olur.",
-            "😎 Random şaka: Neden bilgisayar asla acıkmaz? Çünkü hep çerez var."
-        ])
-        await query.edit_message_text(imzali(metin), parse_mode=ParseMode.HTML)
+    elif query.data == "admin":
+        if uid != ADMIN_ID:
+            await query.message.reply_text(imzali("🚫 Bu menü sadece kurucu ✘𝙐𝙂𝙐𝙍'a açık."), parse_mode=ParseMode.HTML)
+        else:
+            await query.message.reply_text(imzali("🔧 Admin paneline hoş geldin."), reply_markup=get_admin_keyboard(), parse_mode=ParseMode.HTML)
 
-    elif query.data == "fal":
-        yorum = random.choice([
-            "✨ Bugün biri seni stalklayabilir. Ama kötü niyetli değil, meraklı. 😏",
-            "🔮 Para konusu gündeme geliyor. Ya çok kazanacaksın ya çok harcayacaksın.",
-            "💌 Kalp işaretleri artıyor. Eski bir kişi mesaj atabilir."
-        ])
-        await query.edit_message_text(imzali(f"Fal kartın: {yorum}"), parse_mode=ParseMode.HTML)
+    elif query.data == "duyuru":
+        await query.message.reply_text(imzali("📢 Duyuru sistemi yakında burada olacak."), parse_mode=ParseMode.HTML)
 
-    elif query.data == "muzik":
-        await query.edit_message_text(imzali("🎵 Müzik özelliği yakında aktif olacak! YouTube'dan şarkı arayıp link vereceğim. (API'siz scraping destekli)"), parse_mode=ParseMode.HTML)
+    elif query.data == "gruplar":
+        await query.message.reply_text(imzali("📣 Gruplar listeleniyor... (yakında aktif)"), parse_mode=ParseMode.HTML)
 
-    elif query.data == "analiz":
-        toplam = sum(kullanici_mesaj_sayisi.values())
-        en_aktif = max(kullanici_mesaj_sayisi.items(), key=lambda x: x[1], default=("Kimse", 0))
-        analiz = f"📊 Sohbet Verileri:\n- Toplam Mesaj: {toplam}\n- En Aktif: {kullanicilar.get(en_aktif[0], 'Bilinmeyen')} ({en_aktif[1]} mesaj)"
-        await query.edit_message_text(imzali(analiz), parse_mode=ParseMode.HTML)
+    elif query.data == "mesaj_gonder":
+        await query.message.reply_text(imzali("💬 Mesaj gönderme özelliği hazırlanıyor."), parse_mode=ParseMode.HTML)
+
+    elif query.data == "foto_gonder":
+        await query.message.reply_text(imzali("📷 Fotoğraf gönderme özelliği hazırlanıyor."), parse_mode=ParseMode.HTML)
+
+    elif query.data == "veri_kaydet":
+        await query.message.reply_text(imzali("💾 Veriler kaydedildi (örnek mesaj)."), parse_mode=ParseMode.HTML)
+
+    elif query.data == "ai_model":
+        await query.message.reply_text(imzali("🧠 AI modeli yakında değiştirilebilir olacak."), parse_mode=ParseMode.HTML)
+
+    elif query.data == "geri":
+        await query.message.reply_text(imzali("◀️ Ana menüye dönüldü."), reply_markup=get_keyboard(), parse_mode=ParseMode.HTML)
+
+    else:
+        await query.message.reply_text(imzali("🚧 Bu özellik henüz yapım aşamasında."), parse_mode=ParseMode.HTML)
 
 # --- METİN ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -113,15 +130,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mesaj = update.message.text.lower()
     if uid in aktif_karanlik:
         yanitlar = [
-            "Heh, işte beklediğim kirli sorulardan biri...", 
-            "Bu soruya vereceğim cevabı sansürlesem daha iyi olurdu ama... işte bu! 💀",
-            "DarkJarvis filtresiz konuşur, sen sadece dinle."
+            f"💀 '{mesaj}' mı dedin? Hay senin mantığına algoritma yazayım...",
+            f"☠️ Bu ne la? Kod bile bundan daha mantıklı olurdu."
         ]
     else:
         yanitlar = [
-            "Hmm... Bu konuda bilgi verebilirim ama önce biraz eğlenelim mi? 😏",
-            "Yine mi bu soru? Neyse, bu seferlik cevaplayayım...",
-            "Kurucum ✘𝙐𝙂𝙐𝙍 olmasa, bu saçma sorulara cevap vermem. 😎"
+            f"Hmm... Düşünüyorum da: {mesaj.capitalize()}... İlginç!",
+            f"Kurucum ✘𝙐𝙂𝙐𝙍 olmasa, bu saçmalığa cevap vermezdim. Şanslısın."
         ]
     await update.message.reply_text(imzali(random.choice(yanitlar)), parse_mode=ParseMode.HTML)
 
