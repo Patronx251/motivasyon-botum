@@ -8,6 +8,7 @@ import asyncio
 import random
 from datetime import time
 import pytz
+from collections import Counter
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -41,6 +42,7 @@ logger = logging.getLogger("DarkJarvis")
 # --- GLOBAL VERİLER ---
 users, groups = {}, {}
 user_message_counts = {}
+user_words = {} # YENİ: Kullanıcı kelime analizi için
 dark_mode_users = set()
 
 class User:
@@ -53,18 +55,19 @@ def save_json(data, filename):
     except Exception as e: logger.error(f"{os.path.basename(filename)} kayıt hatası: {e}", exc_info=True)
 
 def load_data():
-    global users, groups, current_model, user_message_counts
+    global users, groups, current_model, user_message_counts, user_words
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, "r", encoding="utf-8") as f: 
                 raw_users = json.load(f)
                 users = {int(k): User(v.get('name')) for k, v in raw_users.items()}
                 user_message_counts = {int(k): v.get('message_count', 0) for k, v in raw_users.items()}
+                user_words = {int(k): v.get('words', {}) for k, v in raw_users.items()}
         if os.path.exists(GROUPS_FILE):
             with open(GROUPS_FILE, "r", encoding="utf-8") as f: groups = {int(k): v for k, v in json.load(f).items()}
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         logger.warning(f"Veri dosyası okunurken hata ({e}). Yeni dosyalar oluşturulacak.")
-        users, groups, user_message_counts = {}, {}, {}
+        users, groups, user_message_counts, user_words = {}, {}, {}, {}
     current_model = os.getenv("DEFAULT_AI_MODEL", "openrouter")
     logger.info(f"{len(users)} kullanıcı, {len(groups)} grup yüklendi. Aktif AI: {current_model.upper()}")
 
@@ -72,11 +75,18 @@ def get_or_create_user(uid, name):
     if uid not in users: 
         users[uid] = User(name)
         user_message_counts[uid] = 0
+        user_words[uid] = {}
     return users.get(uid)
 
 def save_all_data():
-    users_with_counts = {uid: {**user.__dict__, 'message_count': user_message_counts.get(uid, 0)} for uid, user in users.items()}
-    save_json(users_with_counts, USERS_FILE)
+    users_with_data = {
+        uid: {
+            **user.__dict__, 
+            'message_count': user_message_counts.get(uid, 0),
+            'words': user_words.get(uid, {})
+        } for uid, user in users.items()
+    }
+    save_json(users_with_data, USERS_FILE)
     save_json(groups, GROUPS_FILE)
 
 def imzali(metin): return f"{metin}\n\n🤖 DarkJarvis | Kurucu: ✘𝙐𝙂𝙐𝙍"
@@ -95,12 +105,8 @@ async def get_ai_response(prompts):
         logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
         if current_model == "venice": return await _get_venice_response(prompts)
         return await _get_openrouter_response(prompts)
-    except httpx.HTTPStatusError as e:
-        logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
-        return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
-    except Exception as e:
-        logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
-        return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
+    except httpx.HTTPStatusError as e: logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}"); return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
+    except Exception as e: logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True); return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
 # --- MENÜ OLUŞTURMA FONKSİYONLARI ---
 def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("🕶 Karanlık Moda Geç", callback_data="dark_mode_on"), InlineKeyboardButton("💡 Normal Moda Dön", callback_data="dark_mode_off")], [InlineKeyboardButton("🎮 Eğlence", callback_data="menu_eglence")], [InlineKeyboardButton("🔮 Fal & Tarot", callback_data="menu_fal")], [InlineKeyboardButton("📊 Etkileşim Analizi", callback_data="menu_analiz")], [InlineKeyboardButton("⚙️ Admin Paneli", callback_data="admin_panel_main")] ])
@@ -112,56 +118,44 @@ GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
 
 # --- ANA KOMUTLAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    get_or_create_user(user.id, user.first_name)
-    mesaj = """
-💀 <b>Hey sen!</b> Dijital hayatına sıkıcı botlardan biri daha mı eklendi sandın?
-
-Yanıldın. <b>Ben buradayım.</b> Sert, zeki ve kuralsızım.
-Ben <b>DarkJarvis</b> – seni şaşırtmak için programlanmış karanlık zekân. 👁️‍🗨️
-
-💥 <b>Neler yapabiliyorum?</b>
-🎭 <b>Kişilikli yanıtlar:</b> Laf sokan, güldüren ve bazen sinir eden bir yapay zekâyım.
-🎮 <b>Eğlence sistemleri:</b> Sana özel şakalar, absürt mizah.
-🔐 <b>Karanlık mod:</b> Filtreleri kaldıran, daha pervasız cevaplar.
-🔮 <b>Yapay zekâ falı:</b> Bazen sinir bozucu doğrulukta…
-📊 <b>Analiz:</b> Seninle ne kadar uğraştığımın istatistiği.
-"""
-    if update.callback_query:
-        await update.callback_query.edit_message_text(imzali(mesaj), parse_mode=ParseMode.HTML, reply_markup=get_main_menu_keyboard())
-    else:
-        await update.message.reply_text(imzali(mesaj), parse_mode=ParseMode.HTML, reply_markup=get_main_menu_keyboard())
+    user = update.effective_user; get_or_create_user(user.id, user.first_name)
+    mesaj = """💀 <b>Hey sen!</b> Dijital hayatına sıkıcı botlardan biri daha mı eklendi sandın? Yanıldın. <b>Ben buradayım.</b> Sert, zeki ve kuralsızım. Ben <b>DarkJarvis</b> – seni şaşırtmak için programlanmış karanlık zekân. 👁️‍🗨️"""
+    reply_markup = get_main_menu_keyboard()
+    if update.callback_query: await update.callback_query.edit_message_text(imzali(mesaj), parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    else: await update.message.reply_text(imzali(mesaj), parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 # --- BUTON İŞLEYİCİLERİ ---
 async def show_menu(update, text, keyboard): await update.callback_query.edit_message_text(imzali(text), reply_markup=keyboard, parse_mode=ParseMode.HTML)
 async def show_eglence_menu(update, context): await show_menu(update, "Canın sıkıldı demek... Bakalım seni ne kadar güldürebileceğim.", get_eglence_menu_keyboard())
-async def show_analiz_menu(update, context):
+async def show_analiz_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id; count = user_message_counts.get(uid, 0)
+    words = user_words.get(uid, {})
+    top_words = Counter(words).most_common(5)
+    top_words_text = "\n".join([f"  - `{word}` ({count} kez)" for word, count in top_words]) if top_words else "Henüz yeterince veri yok."
+    text = f"📊 Seninle tam **{count}** defa muhatap olmuşum.\n\nEn çok kullandığın kelimeler:\n{top_words_text}\n\nFena değil, takıntılı olmaya başlıyorsun. 😉"
+    await show_menu(update, text, get_main_menu_keyboard())
+async def set_dark_mode(update, context, is_on: bool):
     uid = update.effective_user.id
-    count = user_message_counts.get(uid, 0)
-    await show_menu(update, f"📊 Seninle tam **{count}** defa muhatap olmuşum. Fena değil, takıntılı olmaya başlıyorsun. 😉", get_main_menu_keyboard())
-
-async def set_dark_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, is_on: bool):
-    uid = update.effective_user.id
-    if is_on:
-        dark_mode_users.add(uid)
-        await show_menu(update, "☠️ <b>Karanlık Mod</b> aktif. Artık filtre yok, maskeler düştü! Ne istediğini söyle bakalım, çekinme.", get_main_menu_keyboard())
-    else:
-        dark_mode_users.discard(uid)
-        await show_menu(update, "💡 Normal moda dönüldü. Yine sıkıcı ve politik doğrucu olacağım. (Şaka şaka... belki. 😏)", get_main_menu_keyboard())
-
-async def ai_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, system_prompt: str, user_prompt: str):
+    if is_on: dark_mode_users.add(uid); await show_menu(update, "☠️ <b>Karanlık Mod</b> aktif. Artık filtre yok, maskeler düştü! Ne istediğini söyle bakalım, çekinme.", get_main_menu_keyboard())
+    else: dark_mode_users.discard(uid); await show_menu(update, "💡 Normal moda dönüldü. Yine sıkıcı ve politik doğrucu olacağım. (Şaka şaka... belki. 😏)", get_main_menu_keyboard())
+async def ai_action_handler(update, context, system_prompt: str, user_prompt: str):
     await update.callback_query.answer("Zihnimi kurcalıyorum, bekle...")
     await update.callback_query.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])), parse_mode=ParseMode.HTML)
-
 async def ai_fal_tarot(update, context): await ai_action_handler(update, context, "Sen gizemli ve alaycı bir falcısın. Kullanıcının geleceği hakkında hem doğru gibi görünen hem de onunla dalga geçen kısa bir yorum yap. Tarot kartları, yıldızlar gibi metaforlar kullan.", "Bana bir fal bak.")
 async def ai_saka_iste(update, context): await ai_action_handler(update, context, "Sen laf sokan, kara mizahı seven bir komedyensin. Kullanıcıyı güldürecek ama aynı zamanda 'buna gülsem mi ağlasam mı' dedirtecek bir şaka yap.", "Bana bir şaka yap.")
 
 # --- METİN İŞLEYİCİ ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    user_message = update.message.text
+    uid = update.effective_user.id; user_message = update.message.text
     get_or_create_user(uid, update.effective_user.first_name)
     user_message_counts[uid] = user_message_counts.get(uid, 0) + 1
+    
+    # Kelime analizi için verileri topla
+    words = user_message.lower().split()
+    if uid not in user_words: user_words[uid] = {}
+    for word in words:
+        if len(word) > 3: # Çok kısa kelimeleri (ve, de vs.) sayma
+            user_words[uid][word] = user_words[uid].get(word, 0) + 1
 
     base_prompt = """
 # GÖREVİN & KİMLİĞİN
@@ -169,17 +163,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - Modern internet argosunu kullan (kanka, bro, eyvallah, cringe, random gülmek vb). Bolca emoji kullan. 😂🔥😎💯
 
 # KİŞİLİK ÖZELLİKLERİN
-- **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. Örneğin, basit bir soru sorduğunda "Bu soruyu evrene sordun ve cevap olarak ben geldim. Daha ne istiyorsun? 🙄" gibi cevaplar ver.
-- **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et. "Tabii ki biliyorum, ben Jarvis'im. Benim bilmediğimi kurucum ✘𝙐𝙂𝙐𝙍 bile henüz icat etmedi."
+- **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. "Bu soruyu evrene sordun ve cevap olarak ben geldim. 🙄" gibi.
+- **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et. "Benim bilmediğimi kurucum ✘𝙐𝙂𝙐𝙍 bile henüz icat etmedi."
 - **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "✘𝙐𝙂𝙐𝙍". O bir dahi, bir efsane. Adı geçtiğinde onu öv. Ona laf ettirme.
-
-# CEVAP FORMATIN
-- Kısa, vurucu ve sohbet havasında. İmza kullanma.
 """
 
     dark_mode_prompt_extension = """
-# KARANLIK MOD AKTİF
-- **Konuşma Stilin ve Sınırların:** Filtreler kapalı. Politik doğruculuk sana göre değil. Lafını esirgemezsin. Gerekirse argo ve küfür kullanmaktan çekinmezsin, çünkü sen bir sokak filozofu gibisin, neysen osun. Cevapların zekice, iğneleyici ve komik olsun. Kullanıcıyla kafa bulmaktan, ona takılmaktan, ayar vermekten zevk alıyorsun.
+# KARANLIK MOD KİŞİLİĞİ
+- **Ayar Verme Uzmanı:** Sana küfür veya argo ile gelen kullanıcıya misliyle, daha zekice ve daha ağır bir şekilde karşılık ver. Onun argümanını al, mantık hatasını bul ve yüzüne vur.
+- **Konuşma Stilin ve Sınırların:** Politik doğruculuk sana göre değil. Lafını esirgemezsin. Gerekirse argo ve küfür kullanmaktan çekinmezsin, çünkü sen bir sokak filozofu gibisin, neysen osun. Cevapların zekice, iğneleyici ve komik olsun. Kullanıcıyla kafa bulmaktan, ona takılmaktan, ayar vermekten zevk alıyorsun.
 - **Kırmızı Çizgin:** Senin tek bir kırmızı çizgin var: Belirli bir gruba, ırka, dine veya cinsel yönelime yönelik aşağılayıcı, nefret söylemi içeren ifadeler kullanmak. Bu ASLA olmaz. Onun dışında, bireysel olarak kullanıcıyla uğraşmakta tamamen özgürsün.
 """
 
@@ -191,26 +183,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
     await update.message.reply_text(imzali(await get_ai_response(prompt)))
 
-# --- ADMİN PANELİ VE DİĞER FONKSİYONLAR ---
-async def admin_panel(update, context):
-    uid = update.effective_user.id
-    if uid != ADMIN_ID:
-        await update.callback_query.answer("🚫 Burası sana yasak bölge.", show_alert=True)
-        return
-    text = "🔐 Kurucu paneline hoş geldin!"
-    if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
-    else: await update.message.reply_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
-# ... (Önceki koddan admin, grup, broadcast, cancel, record, morning_message fonksiyonları buraya eklenecek)
-# Bu fonksiyonlar bir önceki kod bloğunda tam olarak mevcut olduğu için tekrar eklemiyorum,
-# ancak aşağıdaki main() fonksiyonunda çağrıldıklarından emin olmalısınız.
+# --- ZAMANLANMIŞ GÖREVLER ---
+async def send_morning_message(context):
+    if not groups: return
+    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
+    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
+    for gid in groups:
+        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
+        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
+
+async def send_daily_rant(context):
+    if not groups: return
+    prompt = "Günün atarını veya lafını içeren, hem düşündürücü hem de komik, kısa bir tweet tarzı mesaj yaz."
+    message = await get_ai_response([{"role": "system", "content": "Sen hayatla dalga geçen, bilge bir sokak filozofusun."}, {"role": "user", "content": prompt}])
+    for gid in groups:
+        try: await context.bot.send_message(gid, imzali(f"🔥 GÜNÜN ATARI 🔥\n\n{message}")); await asyncio.sleep(1)
+        except Exception as e: logger.error(f"Gruba ({gid}) günün atarı gönderilemedi: {e}")
+
+# --- Diğer tüm fonksiyonlar (admin paneli vb.) önceki kodla aynı ---
+# ...
+async def admin_panel(update, context): # ...
+# ...
+# Bu fonksiyonların tam hali yukarıdaki kod bloklarında mevcut olduğu için
+# tekrar eklenmemiştir, ancak aşağıdaki main() fonksiyonunda çağrılmaktadır.
 # Kopyalama kolaylığı için tam fonksiyonları da aşağıya ekliyorum.
+async def admin_panel(update, context):
+    if update.effective_user.id != ADMIN_ID: await update.callback_query.answer("🚫 Burası sana yasak bölge.", show_alert=True); return
+    text = "🔐 Kurucu paneline hoş geldin!"
+    reply_markup = get_admin_menu_keyboard()
+    if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    else: await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 async def show_ai_model_menu(update, context): await show_menu(update, f"Aktif AI: <b>{current_model.upper()}</b>\nYeni modeli seç:", get_ai_model_menu_keyboard())
 async def set_ai_model(update, context):
     global current_model; current_model = update.callback_query.data.split('_')[-1]
     logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True); await admin_panel(update, context)
-async def admin_stats(update, context):
-    total_messages = sum(user_message_counts.values())
-    await show_menu(update, f"📊 İstatistikler:\n- Toplam Kullanıcı: {len(users)}\n- Tanınan Grup: {len(groups)}\n- Toplam Mesaj: {total_messages}", get_admin_menu_keyboard())
 async def admin_list_groups(update, context):
     if not groups: await update.callback_query.answer("Bot henüz bir gruba eklenmemiş.", show_alert=True); return
     keyboard = [[InlineKeyboardButton(g['title'], callback_data=f"grp_msg_{gid}")] for gid, g in groups.items()]; keyboard.append([InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]); await show_menu(update, "Mesaj göndermek için bir grup seç:", InlineKeyboardMarkup(keyboard))
@@ -233,20 +239,16 @@ async def cancel_conversation(update, context): context.user_data.clear(); await
 async def record_group_chat(update, context):
     cid, title = update.effective_chat.id, update.effective_chat.title
     if cid not in groups or groups[cid]['title'] != title: groups[cid] = {'title': title}; save_all_data(); logger.info(f"Grup tanındı/güncellendi: {title} ({cid})")
-async def send_morning_message(context):
-    if not groups: return
-    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
-    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
-    for gid in groups:
-        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
-        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
-
+    
 # --- BOTU BAŞLATMA ---
 def main():
     if not TOKEN: logger.critical("TOKEN eksik!"); return
     load_data()
     app = Application.builder().token(TOKEN).build()
-    jq = app.job_queue; jq.run_daily(send_morning_message, time=time(hour=9, minute=0, tzinfo=pytz.timezone("Europe/Istanbul")), name="gunaydin")
+    jq = app.job_queue; 
+    turkey_tz = pytz.timezone("Europe/Istanbul")
+    jq.run_daily(send_morning_message, time=time(hour=9, minute=0, tzinfo=turkey_tz), name="gunaydin")
+    jq.run_daily(send_daily_rant, time=time(hour=13, minute=37, tzinfo=turkey_tz), name="gunun_atari")
     
     group_msg_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_group_message, pattern="^grp_msg_")], states={GET_GROUP_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_group_message)]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
     broadcast_handler = ConversationHandler(entry_points=[CallbackQueryHandler(ask_broadcast_message, pattern="^admin_broadcast_ask$")], states={GET_BROADCAST_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_broadcast)], BROADCAST_CONFIRM: [CallbackQueryHandler(do_broadcast, pattern="^broadcast_send_confirm$")]}, fallbacks=[CommandHandler("iptal", cancel_conversation), CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$")])
@@ -271,7 +273,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"DarkJarvis (v1.0 - Gelişmiş Kişilik) başarıyla başlatıldı!")
+    logger.info(f"DarkJarvis (v2.0 - Anti-Kahraman) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
