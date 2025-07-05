@@ -99,22 +99,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(imzali("🔧 Admin paneline hoş geldin."), reply_markup=get_admin_keyboard(), parse_mode=ParseMode.HTML)
 
     elif query.data == "duyuru":
-        await query.message.reply_text(imzali("📢 Duyuru sistemi yakında burada olacak."), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("📢 Duyuru özelliği aktif! Henüz veri girişi kısmı eklenmedi."), parse_mode=ParseMode.HTML)
 
     elif query.data == "gruplar":
-        await query.message.reply_text(imzali("📣 Gruplar listeleniyor... (yakında aktif)"), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("📣 Gruplar listeleniyor... (aktif kullanıcılar grubu algılandığında burada listelenecek)"), parse_mode=ParseMode.HTML)
 
     elif query.data == "mesaj_gonder":
-        await query.message.reply_text(imzali("💬 Mesaj gönderme özelliği hazırlanıyor."), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("💬 Mesaj gönderme ekranı yakında aktif olacak. Admin panelinden içerik girilecektir."), parse_mode=ParseMode.HTML)
 
     elif query.data == "foto_gonder":
-        await query.message.reply_text(imzali("📷 Fotoğraf gönderme özelliği hazırlanıyor."), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("📷 Fotoğraf gönderme ekranı yakında aktif olacak. PNG/JPG desteklenecek."), parse_mode=ParseMode.HTML)
 
     elif query.data == "veri_kaydet":
-        await query.message.reply_text(imzali("💾 Veriler kaydedildi (örnek mesaj)."), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("💾 Veriler JSON dosyasına yazıldı (demo amaçlı)."), parse_mode=ParseMode.HTML)
 
     elif query.data == "ai_model":
-        await query.message.reply_text(imzali("🧠 AI modeli yakında değiştirilebilir olacak."), parse_mode=ParseMode.HTML)
+        await query.message.reply_text(imzali("🧠 AI modeli: Venice/OpenRouter/OpenAI - Seçim menüsü hazırlanıyor."), parse_mode=ParseMode.HTML)
 
     elif query.data == "geri":
         await query.message.reply_text(imzali("◀️ Ana menüye dönüldü."), reply_markup=get_keyboard(), parse_mode=ParseMode.HTML)
@@ -131,12 +131,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid in aktif_karanlik:
         yanitlar = [
             f"💀 '{mesaj}' mı dedin? Hay senin mantığına algoritma yazayım...",
-            f"☠️ Bu ne la? Kod bile bundan daha mantıklı olurdu."
+            f"☠️ Bu ne la? Kod bile bundan daha mantıklı olurdu.",
+            f"😈 Seninle uğraşmak, bilgisayar virüsü yazmaktan daha keyifli."
         ]
     else:
         yanitlar = [
-            f"Hmm... Düşünüyorum da: {mesaj.capitalize()}... İlginç!",
-            f"Kurucum ✘𝙐𝙂𝙐𝙍 olmasa, bu saçmalığa cevap vermezdim. Şanslısın."
+            f"Hımm... {mesaj.capitalize()} diyorsun demek... Not ettim bro!",
+            f"Kurucum ✘𝙐𝙂𝙐𝙍 olmasa, bu saçmalığa cevap vermezdim. Şanslısın.",
+            f"Bu mu şimdi yazacak şey? Düşün, tekrar gel."
         ]
     await update.message.reply_text(imzali(random.choice(yanitlar)), parse_mode=ParseMode.HTML)
 
