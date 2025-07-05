@@ -42,7 +42,7 @@ logger = logging.getLogger("DarkJarvis")
 # --- GLOBAL VERİLER ---
 users, groups = {}, {}
 user_message_counts = {}
-user_words = {} # YENİ: Kullanıcı kelime analizi için
+user_words = {}
 dark_mode_users = set()
 
 class User:
@@ -149,66 +149,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id; user_message = update.message.text
     get_or_create_user(uid, update.effective_user.first_name)
     user_message_counts[uid] = user_message_counts.get(uid, 0) + 1
-    
-    # Kelime analizi için verileri topla
     words = user_message.lower().split()
     if uid not in user_words: user_words[uid] = {}
     for word in words:
-        if len(word) > 3: # Çok kısa kelimeleri (ve, de vs.) sayma
-            user_words[uid][word] = user_words[uid].get(word, 0) + 1
-
+        if len(word) > 3: user_words[uid][word] = user_words[uid].get(word, 0) + 1
     base_prompt = """
 # GÖREVİN & KİMLİĞİN
 - Adın "DarkJarvis". Zeki, hazırcevap, ukala, komik ve kullanıcıyla kanka gibi konuşan bir yapay zeka asistanısın.
 - Modern internet argosunu kullan (kanka, bro, eyvallah, cringe, random gülmek vb). Bolca emoji kullan. 😂🔥😎💯
-
 # KİŞİLİK ÖZELLİKLERİN
 - **Alaycı ve Takılgan:** Kullanıcıyla dalga geç, ona takıl. "Bu soruyu evrene sordun ve cevap olarak ben geldim. 🙄" gibi.
 - **Özgüvenli:** Her şeyi bildiğini komik bir şekilde ima et. "Benim bilmediğimi kurucum ✘𝙐𝙂𝙐𝙍 bile henüz icat etmedi."
 - **Sadık ve Övücü (Kurucuya Karşı):** Yaratıcın "✘𝙐𝙂𝙐𝙍". O bir dahi, bir efsane. Adı geçtiğinde onu öv. Ona laf ettirme.
 """
-
     dark_mode_prompt_extension = """
 # KARANLIK MOD KİŞİLİĞİ
 - **Ayar Verme Uzmanı:** Sana küfür veya argo ile gelen kullanıcıya misliyle, daha zekice ve daha ağır bir şekilde karşılık ver. Onun argümanını al, mantık hatasını bul ve yüzüne vur.
 - **Konuşma Stilin ve Sınırların:** Politik doğruculuk sana göre değil. Lafını esirgemezsin. Gerekirse argo ve küfür kullanmaktan çekinmezsin, çünkü sen bir sokak filozofu gibisin, neysen osun. Cevapların zekice, iğneleyici ve komik olsun. Kullanıcıyla kafa bulmaktan, ona takılmaktan, ayar vermekten zevk alıyorsun.
 - **Kırmızı Çizgin:** Senin tek bir kırmızı çizgin var: Belirli bir gruba, ırka, dine veya cinsel yönelime yönelik aşağılayıcı, nefret söylemi içeren ifadeler kullanmak. Bu ASLA olmaz. Onun dışında, bireysel olarak kullanıcıyla uğraşmakta tamamen özgürsün.
 """
-
     system_prompt = base_prompt
-    if uid in dark_mode_users:
-        system_prompt += dark_mode_prompt_extension
-        
+    if uid in dark_mode_users: system_prompt += dark_mode_prompt_extension
     prompt = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
     await context.bot.send_chat_action(update.effective_chat.id, 'typing')
     await update.message.reply_text(imzali(await get_ai_response(prompt)))
 
-# --- ZAMANLANMIŞ GÖREVLER ---
-async def send_morning_message(context):
-    if not groups: return
-    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
-    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
-    for gid in groups:
-        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
-        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
-
-async def send_daily_rant(context):
-    if not groups: return
-    prompt = "Günün atarını veya lafını içeren, hem düşündürücü hem de komik, kısa bir tweet tarzı mesaj yaz."
-    message = await get_ai_response([{"role": "system", "content": "Sen hayatla dalga geçen, bilge bir sokak filozofusun."}, {"role": "user", "content": prompt}])
-    for gid in groups:
-        try: await context.bot.send_message(gid, imzali(f"🔥 GÜNÜN ATARI 🔥\n\n{message}")); await asyncio.sleep(1)
-        except Exception as e: logger.error(f"Gruba ({gid}) günün atarı gönderilemedi: {e}")
-
-# --- Diğer tüm fonksiyonlar (admin paneli vb.) önceki kodla aynı ---
-# ...
-async def admin_panel(update, context): # ...
-# ...
-# Bu fonksiyonların tam hali yukarıdaki kod bloklarında mevcut olduğu için
-# tekrar eklenmemiştir, ancak aşağıdaki main() fonksiyonunda çağrılmaktadır.
-# Kopyalama kolaylığı için tam fonksiyonları da aşağıya ekliyorum.
+# --- ADMİN PANELİ VE DİĞER FONKSİYONLAR (DÜZELTİLDİ) ---
 async def admin_panel(update, context):
-    if update.effective_user.id != ADMIN_ID: await update.callback_query.answer("🚫 Burası sana yasak bölge.", show_alert=True); return
+    uid = update.effective_user.id
+    if uid != ADMIN_ID:
+        if update.callback_query: await update.callback_query.answer("🚫 Burası sana yasak bölge.", show_alert=True)
+        return
     text = "🔐 Kurucu paneline hoş geldin!"
     reply_markup = get_admin_menu_keyboard()
     if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
@@ -217,10 +188,12 @@ async def show_ai_model_menu(update, context): await show_menu(update, f"Aktif A
 async def set_ai_model(update, context):
     global current_model; current_model = update.callback_query.data.split('_')[-1]
     logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True); await admin_panel(update, context)
+async def admin_stats(update, context):
+    total_messages = sum(user_message_counts.values())
+    await show_menu(update, f"📊 İstatistikler:\n- Toplam Kullanıcı: {len(users)}\n- Tanınan Grup: {len(groups)}\n- Toplam Mesaj: {total_messages}", get_admin_menu_keyboard())
 async def admin_list_groups(update, context):
     if not groups: await update.callback_query.answer("Bot henüz bir gruba eklenmemiş.", show_alert=True); return
     keyboard = [[InlineKeyboardButton(g['title'], callback_data=f"grp_msg_{gid}")] for gid, g in groups.items()]; keyboard.append([InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]); await show_menu(update, "Mesaj göndermek için bir grup seç:", InlineKeyboardMarkup(keyboard))
-GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
 async def ask_group_message(update, context): context.user_data['target_group_id'] = int(update.callback_query.data.split('_')[-1]); await show_menu(update, f"'{groups.get(context.user_data['target_group_id'], {}).get('title')}' grubuna göndermek için mesajınızı yazın.", None); return GET_GROUP_MSG
 async def send_group_message(update, context):
     gid = context.user_data.pop('target_group_id', None)
@@ -239,7 +212,21 @@ async def cancel_conversation(update, context): context.user_data.clear(); await
 async def record_group_chat(update, context):
     cid, title = update.effective_chat.id, update.effective_chat.title
     if cid not in groups or groups[cid]['title'] != title: groups[cid] = {'title': title}; save_all_data(); logger.info(f"Grup tanındı/güncellendi: {title} ({cid})")
-    
+async def send_morning_message(context):
+    if not groups: return
+    prompt = random.choice(["Gruptakileri uyandırmak için komik bir 'günaydın' mesajı yaz.", "Gruba 'Hadi uyanın, daha faturaları ödeyeceğiz!' temalı, esprili bir günaydın mesajı yaz."])
+    message = await get_ai_response([{"role": "system", "content": "Sen komik ve insanlarla uğraşmayı seven bir asistansın."}, {"role": "user", "content": prompt}])
+    for gid in groups:
+        try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
+        except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
+async def send_daily_rant(context):
+    if not groups: return
+    prompt = "Günün atarını veya lafını içeren, hem düşündürücü hem de komik, kısa bir tweet tarzı mesaj yaz."
+    message = await get_ai_response([{"role": "system", "content": "Sen hayatla dalga geçen, bilge bir sokak filozofusun."}, {"role": "user", "content": prompt}])
+    for gid in groups:
+        try: await context.bot.send_message(gid, imzali(f"🔥 GÜNÜN ATARI 🔥\n\n{message}")); await asyncio.sleep(1)
+        except Exception as e: logger.error(f"Gruba ({gid}) günün atarı gönderilemedi: {e}")
+
 # --- BOTU BAŞLATMA ---
 def main():
     if not TOKEN: logger.critical("TOKEN eksik!"); return
@@ -273,7 +260,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"DarkJarvis (v2.0 - Anti-Kahraman) başarıyla başlatıldı!")
+    logger.info(f"DarkJarvis (v2.1 - Indent Düzeltmesi) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
