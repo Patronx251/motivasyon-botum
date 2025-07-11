@@ -20,7 +20,7 @@ from telegram.error import TelegramError
 
 # --- Yapılandırma ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-dotenv_path = os.path.join(BASE_DIR, '.env')
+dotenv_path = os.path.join(BASE_DIR, ".env")
 load_dotenv(dotenv_path=dotenv_path)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -28,10 +28,11 @@ ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 VENICE_API_KEY = os.getenv("VENICE_API_KEY")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") # YENİ
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") # Google AI Studio Anahtarı
 DEFAULT_AI_MODEL = os.getenv("DEFAULT_AI_MODEL", "openrouter")
 current_model = DEFAULT_AI_MODEL
 
+# ... (Diğer yapılandırma ve dosya yolları aynı)
 USERS_FILE = os.path.join(BASE_DIR, "users_data.json"); GROUPS_FILE = os.path.join(BASE_DIR, "groups.json"); LOG_FILE = os.path.join(BASE_DIR, "bot.log")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", handlers=[logging.FileHandler(LOG_FILE, encoding='utf-8'), logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger("DarkJarvis")
@@ -39,6 +40,7 @@ users, groups, user_message_counts, user_words, dark_mode_users = {}, {}, {}, {}
 class User:
     def __init__(self, name=""): self.name = name
 
+# --- Veri Yönetimi ve Diğer Yardımcı Fonksiyonlar (Aynı) ---
 def save_json(data, filename):
     try:
         with open(filename, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=4)
@@ -61,39 +63,74 @@ def get_or_create_user(uid, name):
 def save_all_data(): users_with_data = {uid: {**user.__dict__, 'message_count': user_message_counts.get(uid, 0), 'words': user_words.get(uid, {})} for uid, user in users.items()}; save_json(users_with_data, USERS_FILE); save_json(groups, GROUPS_FILE)
 def imzali(metin): return f"{metin}\n\n🤖 DarkJarvis | Kurucu: ✘𝙐𝙂𝙐𝙍"
 
+# --- AI Motoru Fonksiyonları ---
 async def _get_openrouter_response(prompts):
     if not OPENROUTER_API_KEY: return "OpenRouter API anahtarı eksik."
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-flash-1.5", "messages": prompts}
+    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-1.5-flash-latest", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
     payload = {"model": "venice-gpt-4", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
-async def _get_google_ai_studio_response(prompts):
-    if not GOOGLE_API_KEY: return "Google AI Studio API anahtarı eksik."
-    # Google API'si 'messages' yerine 'contents' ve farklı bir format kullanır.
-    formatted_contents = [{"parts": [{"text": p["content"]}], "role": p["role"]} for p in prompts]
-    # Sistem mesajı 'role' olarak desteklenmiyor, ilk mesaja ekliyoruz.
-    system_prompt_text = ""
-    if formatted_contents[0]["role"] == "system":
-        system_prompt_text = formatted_contents.pop(0)["parts"][0]["text"]
-        formatted_contents[0]["parts"][0]["text"] = system_prompt_text + "\n\nKULLANICI MESAJI:\n" + formatted_contents[0]["parts"][0]["text"]
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GOOGLE_API_KEY}"
-    payload = {"contents": formatted_contents}
-    async with httpx.AsyncClient() as c:
-        r = await c.post(url, json=payload, timeout=60); r.raise_for_status(); return r.json()["candidates"][0]["content"]["parts"][0]["text"]
-async def get_ai_response(prompts):
-    try:
-        logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
-        if current_model == "venice": return await _get_venice_response(prompts)
-        if current_model == "google": return await _get_google_ai_studio_response(prompts)
-        return await _get_openrouter_response(prompts)
-    except httpx.HTTPStatusError as e: logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}"); return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
-    except Exception as e: logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True); return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
-# --- MENÜLER VE DİĞER FONKSİYONLAR ---
+# === GOOGLE AI STUDIO İÇİN TAMAMEN YENİLENMİŞ FONKSİYON ===
+async def _get_google_ai_studio_response(prompts):
+    if not GOOGLE_API_KEY:
+        return "Google AI Studio API anahtarı eksik."
+
+    # Google'ın beklediği veri formatı: {'role': 'user', 'parts': [{'text': '...'}]}
+    # Sistem mesajı 'role' olarak desteklenmiyor.
+    # Bu yüzden sistem prompt'unu alıp, kullanıcının ilk mesajının başına ekliyoruz.
+    system_prompt_text = ""
+    user_contents = []
+    
+    # Gelen prompt listesini dolaş
+    for p in prompts:
+        if p["role"] == "system":
+            system_prompt_text = p["content"]
+        else:
+            # Sadece 'user' ve 'model' (asistan) rollerini ekle
+            user_contents.append({"role": "user" if p["role"] == "user" else "model", "parts": [{"text": p["content"]}]})
+
+    # Eğer sistem mesajı varsa, onu ilk kullanıcı mesajının başına ekle
+    if system_prompt_text and user_contents:
+        user_contents[0]["parts"][0]["text"] = f"{system_prompt_text}\n\n--- KULLANICI MESAJI ---\n{user_contents[0]['parts'][0]['text']}"
+
+    # Doğru URL ve payload
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GOOGLE_API_KEY}"
+    payload = {"contents": user_contents}
+    
+    async with httpx.AsyncClient() as c:
+        r = await c.post(url, json=payload, timeout=60)
+        r.raise_for_status() # Hata varsa exception fırlatır
+        # Cevabın doğru kısmını al
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+# === AKILLI AI YÖNLENDİRİCİ (RATE LIMIT HANDLER İLE) ===
+async def get_ai_response(prompts):
+    max_retries = 3; delay = 2
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"AI isteği gönderiliyor. Model: {current_model.upper()}, Deneme: {attempt + 1}")
+            if current_model == "google": return await _get_google_ai_studio_response(prompts)
+            elif current_model == "venice": return await _get_venice_response(prompts)
+            else: return await _get_openrouter_response(prompts)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                logger.warning(f"Rate limit aşıldı (429). {delay} saniye bekleniyor...")
+                if attempt < max_retries - 1: await asyncio.sleep(delay); delay *= 2; continue
+                else: return "API şu anda çok yoğun. Lütfen bir dakika sonra tekrar dene."
+            else:
+                logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
+                return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
+        except Exception as e:
+            logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
+            return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
+    return "Tüm denemelere rağmen AI servisine ulaşılamadı."
+
+# --- Diğer tüm fonksiyonlar (menüler, komutlar, admin paneli vb.) önceki kodla aynı ---
+# ...
 def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("🕶 Karanlık Mod", callback_data="dark_mode_on"), InlineKeyboardButton("💡 Normal Mod", callback_data="dark_mode_off")], [InlineKeyboardButton("🎮 Eğlence", callback_data="menu_eglence")], [InlineKeyboardButton("🔮 Fal & Tarot", callback_data="menu_fal")], [InlineKeyboardButton("📊 Etkileşim Analizi", callback_data="menu_analiz")], [InlineKeyboardButton("⚙️ Admin Paneli", callback_data="admin_panel_main")] ])
 def get_eglence_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("😂 Şaka İste", callback_data="ai_saka")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_admin_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📊 İstatistikler", callback_data="admin_stats")], [InlineKeyboardButton("📢 Grupları Yönet", callback_data="admin_list_groups")], [InlineKeyboardButton("📣 Herkese Duyuru", callback_data="admin_broadcast_ask")], [InlineKeyboardButton(f"🧠 AI Model ({current_model.upper()})", callback_data="admin_select_ai")], [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="admin_save")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")] ])
@@ -118,13 +155,12 @@ async def show_ai_model_menu(update, context): await show_menu(update, f"Aktif A
 async def set_ai_model(update, context): global current_model; current_model = update.callback_query.data.split('_')[-1]; logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True); await admin_panel(update, context)
 async def handle_text(update, context):
     uid = update.effective_user.id; user_message = update.message.text
-    get_or_create_user(uid, update.effective_user.first_name)
-    user_message_counts[uid] = user_message_counts.get(uid, 0) + 1
+    get_or_create_user(uid, update.effective_user.first_name); user_message_counts[uid] = user_message_counts.get(uid, 0) + 1
     words = user_message.lower().split()
     if uid not in user_words: user_words[uid] = {}
     for word in words:
         if len(word) > 3: user_words[uid][word] = user_words[uid].get(word, 0) + 1
-    base_prompt = """# ... (Önceki mesajdaki kişilik prompt'u)"""; dark_mode_prompt_extension = """# KARANLIK MOD KİŞİLİĞİ\n- **Ayar Verme Uzmanı:**..."""
+    base_prompt = """# GÖREVİN & KİMLİĞİN\n- Adın "DarkJarvis". Zeki, hazırcevap, ukala, komik bir asistansın."""; dark_mode_prompt_extension = """# KARANLIK MOD KİŞİLİĞİ\n- **Ayar Verme Uzmanı:**..."""
     system_prompt = base_prompt + (dark_mode_prompt_extension if uid in dark_mode_users else "")
     prompt = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
     await context.bot.send_chat_action(update.effective_chat.id, 'typing'); await update.message.reply_text(imzali(await get_ai_response(prompt)))
@@ -154,7 +190,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(show_ai_model_menu, pattern="^admin_select_ai$")); app.add_handler(CallbackQueryHandler(set_ai_model, pattern="^ai_model_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    logger.info(f"DarkJarvis (v3.0 - Gemini 1.5 Pro) başarıyla başlatıldı!"); app.run_polling()
+    logger.info(f"DarkJarvis (v5.0 - Gemini 1.5 Pro Düzeltmesi) başarıyla başlatıldı!"); app.run_polling()
 if __name__ == '__main__':
     try: main()
     except Exception as e: logger.critical(f"Kritik hata: {e}", exc_info=True)
