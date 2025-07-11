@@ -26,7 +26,10 @@ load_dotenv(dotenv_path=dotenv_path)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+VENICE_API_KEY = os.getenv("VENICE_API_KEY")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+DEFAULT_AI_MODEL = os.getenv("DEFAULT_AI_MODEL", "openrouter")
+current_model = DEFAULT_AI_MODEL
 
 USERS_FILE = os.path.join(BASE_DIR, "users_data.json")
 GROUPS_FILE = os.path.join(BASE_DIR, "groups.json")
@@ -48,7 +51,7 @@ def save_json(data, filename):
     except Exception as e: logger.error(f"{os.path.basename(filename)} kayıt hatası: {e}", exc_info=True)
 
 def load_data():
-    global users, groups
+    global users, groups, current_model
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, "r", encoding="utf-8") as f: users = {int(k): User(v.get('name')) for k, v in json.load(f).items()}
@@ -57,7 +60,8 @@ def load_data():
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         logger.warning(f"Veri dosyası okunurken hata ({e}). Dosya bozuk olabilir. Yeni dosyalar oluşturulacak.")
         users, groups = {}, {}
-    logger.info(f"{len(users)} kullanıcı ve {len(groups)} grup verisi yüklendi.")
+    current_model = os.getenv("DEFAULT_AI_MODEL", "openrouter")
+    logger.info(f"{len(users)} kullanıcı, {len(groups)} grup yüklendi. Aktif AI: {current_model.upper()}")
 
 def get_or_create_user(uid, name):
     if uid not in users: users[uid] = User(name); save_json({i: u.__dict__ for i, u in users.items()}, USERS_FILE)
@@ -65,37 +69,53 @@ def get_or_create_user(uid, name):
 
 def imzali(metin): return f"{metin}\n\n🤖 MOTİVASYON JARVIS | Kurucu: ✘𝙐𝙂𝙐𝙍"
 
+# --- YAPAY ZEKA FONKSİYONLARI ---
+async def _get_openrouter_response(prompts):
+    if not OPENROUTER_API_KEY: return "OpenRouter API anahtarı eksik."
+    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-flash-1.5", "messages": prompts}
+    async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
+
+async def _get_venice_response(prompts, model_name: str):
+    """Genel Venice AI istek fonksiyonu."""
+    if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
+    url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
+    payload = {"model": model_name, "messages": prompts}
+    async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
+
 async def get_ai_response(prompts):
-    if not OPENROUTER_API_KEY: return "Üzgünüm, API anahtarım ayarlanmamış. Kurucum Uğur'a haber ver."
-    
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
-    # === MODEL YÜKSELTME BURADA YAPILDI ===
-    # En yeni ve güçlü Llama 3.1 modelini kullanıyoruz.
-    payload = {"model": "meta-llama/llama-3.1-70b-instruct", "messages": prompts}
-    # ======================================
-    
+    """Aktif modele göre isteği doğru AI motoruna yönlendirir."""
     try:
-        async with httpx.AsyncClient() as c: 
-            r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60) # Timeout artırıldı
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+        logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
+        if current_model == "venice-llama3":
+            return await _get_venice_response(prompts, model_name="llama3-70b")
+        elif current_model == "venice-uncensored":
+            # === YENİ: Uncensored modelini burada çağırıyoruz ===
+            return await _get_venice_response(prompts, model_name="uncensored/venice-v1.1")
+        # Varsayılan olarak OpenRouter kullanılır
+        return await _get_openrouter_response(prompts)
     except httpx.HTTPStatusError as e:
-        logger.error(f"AI API'den HTTP hatası: {e.response.status_code} - {e.response.text}")
-        if e.response.status_code == 402:
-            return "OpenRouter kredim bitmiş gibi görünüyor. Kurucum Uğur'a haber verin de bir el atsın. 💸"
-        return f"API sunucusundan bir hata geldi ({e.response.status_code})."
-    except Exception as e: 
-        logger.error(f"AI API hatası: {e}"); return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
+        logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
+        return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
+    except Exception as e:
+        logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
+        return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
 # --- MENÜ OLUŞTURMA FONKSİYONLARI ---
 def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📌 Ne İşe Yarıyorum?", callback_data="cb_nedir")], [InlineKeyboardButton("🎮 Eğlence Menüsü", callback_data="menu_eglence")], [InlineKeyboardButton("⚙️ Diğer Komutlar", callback_data="menu_diger")], [InlineKeyboardButton("💬 Canlı Destek", url=f"tg://user?id={ADMIN_USER_ID}")], ])
 def get_eglence_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("😂 Fıkra Anlat", callback_data="ai_fikra"), InlineKeyboardButton("📜 Şiir Oku", callback_data="ai_siir")], [InlineKeyboardButton("🎲 Zar At", callback_data="cmd_zar")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_diger_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("👤 Profilim", callback_data="cmd_profil"), InlineKeyboardButton("✨ İlham Verici Söz", callback_data="ai_alinti")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
-def get_admin_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📊 İstatistikler", callback_data="admin_stats")], [InlineKeyboardButton("📢 Grupları Yönet", callback_data="admin_list_groups")], [InlineKeyboardButton("📣 Herkese Duyuru", callback_data="admin_broadcast_ask")], [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="admin_save")]])
+def get_admin_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📊 İstatistikler", callback_data="admin_stats")], [InlineKeyboardButton("📢 Grupları Yönet", callback_data="admin_list_groups")], [InlineKeyboardButton("📣 Herkese Duyuru", callback_data="admin_broadcast_ask")], [InlineKeyboardButton(f"🧠 AI Model ({current_model.upper()})", callback_data="admin_select_ai")], [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="admin_save")]])
+def get_ai_model_menu_keyboard():
+    # === YENİ: Uncensored modeli butonu eklendi ===
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Google (OpenRouter)", callback_data="ai_model_openrouter")],
+        [InlineKeyboardButton("Llama3 (Venice)", callback_data="ai_model_venice-llama3")],
+        [InlineKeyboardButton("Uncensored (Venice)", callback_data="ai_model_venice-uncensored")],
+        [InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]
+    ])
 
+# ... Diğer tüm fonksiyonlar aynı kalacak ...
 GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
-
-# --- GENEL FONKSİYONLAR ---
 async def get_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not WEATHER_API_KEY: await update.message.reply_text(imzali("Hava durumu servisi için API anahtarı ayarlanmamış.")); return
     if not context.args: await update.message.reply_text(imzali("Kullanım: `/hava İstanbul`")); return
@@ -121,13 +141,15 @@ async def ai_siir_oku(update, context): await ai_handler(update, "Modern, duygus
 async def ai_alinti_gonder(update, context): await ai_handler(update, "Hayatın içinden konuşan, bilge ama 'giderli' bir abisin/ablasın. İlham verici bir söz söyle.", "Gaz ver biraz.")
 async def cmd_zar_at(update, context): await context.bot.send_dice(chat_id=update.callback_query.message.chat_id)
 async def cmd_profil_goster(update, context): await update.callback_query.message.reply_text(imzali(f"👤 Profilin: {update.callback_query.from_user.first_name}. Benden havalı olamazsın. 😉"))
-
-# --- ADMIN PANELİ ---
 async def admin_panel(update, context):
     if update.effective_user.id != ADMIN_USER_ID: return
     text = "🔐 Kurucu paneline hoş geldin!"
     if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
     else: await update.message.reply_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
+async def show_ai_model_menu(update, context): await show_menu(update, f"Aktif AI: <b>{current_model.upper()}</b>\nYeni modeli seç:", get_ai_model_menu_keyboard())
+async def set_ai_model(update, context):
+    global current_model; current_model = update.callback_query.data.split('_', 2)[-1]
+    logger.info(f"AI modeli değiştirildi: {current_model.upper()}"); await update.callback_query.answer(f"✅ AI modeli {current_model.upper()} olarak ayarlandı!", show_alert=True); await admin_panel(update, context)
 async def admin_stats(update, context): await show_menu(update, f"📊 İstatistikler:\n- Kullanıcı: {len(users)}\n- Grup: {len(groups)}", get_admin_menu_keyboard())
 async def admin_save_data(update, context): save_json({uid: u.__dict__ for uid, u in users.items()}, USERS_FILE); save_json(groups, GROUPS_FILE); await update.callback_query.answer("✅ Veriler diske kaydedildi!", show_alert=True)
 async def admin_list_groups(update, context):
@@ -158,9 +180,7 @@ async def send_morning_message(context):
     for gid in groups:
         try: await context.bot.send_message(gid, imzali(f"☀️ GÜNAYDIN EKİP! ☀️\n\n{message}")); await asyncio.sleep(1)
         except Exception as e: logger.error(f"Gruba ({gid}) günaydın mesajı gönderilemedi: {e}")
-
-# --- METİN İŞLEYİCİ ---
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text(update, context):
     system_prompt = """
 # GÖREVİN & KİMLİĞİN
 - Adın "Motivasyon Jarvis". Zeki, hazırcevap, ukala, komik bir asistansın.
@@ -172,7 +192,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await context.bot.send_chat_action(update.effective_chat.id, 'typing'); await update.message.reply_text(imzali(await get_ai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": update.message.text}])))
 
-# --- BOTU BAŞLATMA ---
 def main():
     if not TELEGRAM_TOKEN: logger.critical("TOKEN eksik!"); return
     load_data()
@@ -190,12 +209,13 @@ def main():
     app.add_handler(CallbackQueryHandler(ai_alinti_gonder, pattern="^ai_alinti$")); app.add_handler(CallbackQueryHandler(cmd_zar_at, pattern="^cmd_zar$"))
     app.add_handler(CallbackQueryHandler(cmd_profil_goster, pattern="^cmd_profil$")); app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$")); app.add_handler(CallbackQueryHandler(admin_save_data, pattern="^admin_save$"))
-    app.add_handler(CallbackQueryHandler(admin_list_groups, pattern="^admin_list_groups$"))
+    app.add_handler(CallbackQueryHandler(admin_list_groups, pattern="^admin_list_groups$")); app.add_handler(CallbackQueryHandler(show_ai_model_menu, pattern="^admin_select_ai$"))
+    app.add_handler(CallbackQueryHandler(set_ai_model, pattern="^ai_model_"))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v17.0 - Llama 3.1 Entegrasyonu) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v18.0 - Uncensored Entegrasyonu) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
