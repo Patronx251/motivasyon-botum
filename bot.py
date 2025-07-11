@@ -36,7 +36,7 @@ LOG_FILE = os.path.join(BASE_DIR, "bot.log")
 
 # --- Logging Kurulumu ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", handlers=[logging.FileHandler(LOG_FILE, encoding='utf-8'), logging.StreamHandler(sys.stdout)])
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("MotivasyonJarvis")
 
 # --- Veri Yönetimi ---
 users, groups = {}, {}
@@ -76,10 +76,10 @@ async def _get_openrouter_response(prompts):
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
-    # LÜTFEN 'llama3-70b' KISMINI KULLANDIĞINIZ DOĞRU VENICE AI MODEL ADIYLA DEĞİŞTİRİN
-    payload = {"model": "llama3-70b", "messages": prompts}
+    payload = {"model": "llama3-70b", "messages": prompts} # Lütfen bu model adının doğru olduğundan emin olun.
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 
+# === SADECE BU FONKSİYON GÜNCELLENDİ ===
 async def get_ai_response(prompts):
     try:
         logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
@@ -87,7 +87,8 @@ async def get_ai_response(prompts):
             return await _get_venice_response(prompts)
         return await _get_openrouter_response(prompts)
     except httpx.HTTPStatusError as e:
-        logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
+        # API'den gelen hatayı daha detaylı loglayalım
+        logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - Yanıt: {e.response.text}")
         return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
     except Exception as e:
         logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
@@ -98,7 +99,7 @@ def get_main_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButto
 def get_eglence_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("😂 Fıkra Anlat", callback_data="ai_fikra"), InlineKeyboardButton("📜 Şiir Oku", callback_data="ai_siir")], [InlineKeyboardButton("🎲 Zar At", callback_data="cmd_zar")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_diger_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("👤 Profilim", callback_data="cmd_profil"), InlineKeyboardButton("✨ İlham Verici Söz", callback_data="ai_alinti")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_admin_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📊 İstatistikler", callback_data="admin_stats")], [InlineKeyboardButton("📢 Grupları Yönet", callback_data="admin_list_groups")], [InlineKeyboardButton("📣 Herkese Duyuru", callback_data="admin_broadcast_ask")], [InlineKeyboardButton(f"🧠 AI Model ({current_model.upper()})", callback_data="admin_select_ai")], [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="admin_save")]])
-def get_ai_model_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("Google (OpenRouter)", callback_data="ai_model_openrouter")], [InlineKeyboardButton("Venice AI (Llama3)", callback_data="ai_model_venice")], [InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]])
+def get_ai_model_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("Google (OpenRouter)", callback_data="ai_model_openrouter")], [InlineKeyboardButton("Venice AI", callback_data="ai_model_venice")], [InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]])
 
 GET_GROUP_MSG, GET_BROADCAST_MSG, BROADCAST_CONFIRM = range(3)
 
@@ -131,7 +132,7 @@ async def cmd_profil_goster(update, context): await update.callback_query.messag
 
 # --- ADMIN PANELİ ---
 async def admin_panel(update, context):
-    if update.effective_user.id != ADMIN_USER_ID: return
+    if update.effective_user.id != ADMIN_ID: return
     text = "🔐 Kurucu paneline hoş geldin!"
     if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
     else: await update.message.reply_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
@@ -203,11 +204,7 @@ def main():
     app.add_handler(group_msg_handler); app.add_handler(broadcast_handler)
     app.add_handler(CallbackQueryHandler(show_eglence_menu, pattern="^menu_eglence$")); app.add_handler(CallbackQueryHandler(show_diger_menu, pattern="^menu_diger$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^menu_main$")); app.add_handler(CallbackQueryHandler(show_nedir, pattern="^cb_nedir$"))
-    
-    # === YAZIM HATASININ DÜZELTİLDİĞİ SATIR ===
     app.add_handler(CallbackQueryHandler(ai_fikra_anlat, pattern="^ai_fikra$")); app.add_handler(CallbackQueryHandler(ai_siir_oku, pattern="^ai_siir$"))
-    # ==========================================
-
     app.add_handler(CallbackQueryHandler(ai_alinti_gonder, pattern="^ai_alinti$")); app.add_handler(CallbackQueryHandler(cmd_zar_at, pattern="^cmd_zar$"))
     app.add_handler(CallbackQueryHandler(cmd_profil_goster, pattern="^cmd_profil$")); app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$")); app.add_handler(CallbackQueryHandler(admin_save_data, pattern="^admin_save$"))
@@ -217,7 +214,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v15.2 - Yazım Hatası Düzeltmesi) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v16.3 - Gelişmiş Hata Yakalama) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
