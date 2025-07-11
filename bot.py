@@ -28,7 +28,7 @@ ADMIN_ID = int(os.getenv("ADMIN_USER_ID", 0))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 VENICE_API_KEY = os.getenv("VENICE_API_KEY")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") # Google AI Studio Anahtarı
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEFAULT_AI_MODEL = os.getenv("DEFAULT_AI_MODEL", "openrouter")
 current_model = DEFAULT_AI_MODEL
 
@@ -63,51 +63,37 @@ def get_or_create_user(uid, name):
 def save_all_data(): users_with_data = {uid: {**user.__dict__, 'message_count': user_message_counts.get(uid, 0), 'words': user_words.get(uid, {})} for uid, user in users.items()}; save_json(users_with_data, USERS_FILE); save_json(groups, GROUPS_FILE)
 def imzali(metin): return f"{metin}\n\n🤖 DarkJarvis | Kurucu: ✘𝙐𝙂𝙐𝙍"
 
-# --- AI Motoru Fonksiyonları ---
+# --- YENİLENMİŞ AI Motoru Fonksiyonları ---
 async def _get_openrouter_response(prompts):
     if not OPENROUTER_API_KEY: return "OpenRouter API anahtarı eksik."
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}; payload = {"model": "google/gemini-1.5-flash-latest", "messages": prompts}
-    async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
+    # DÜZELTME: headers kısmını httpx'e bırakıyoruz, sadece Authorization header'ını gönderiyoruz.
+    # OpenRouter referer header'ı da isteyebilir.
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "https://github.com/your-repo", # Bazı modeller bunu isteyebilir, kendi repo adresinizi yazabilirsiniz
+        "X-Title": "DarkJarvis Bot" # Projenizin adını belirtmek iyi bir pratiktir
+    }
+    payload = {"model": "google/gemini-1.5-flash-latest", "messages": prompts}
+    async with httpx.AsyncClient() as c: 
+        r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
 async def _get_venice_response(prompts):
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
     payload = {"model": "venice-gpt-4", "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
-
-# === GOOGLE AI STUDIO İÇİN TAMAMEN YENİLENMİŞ FONKSİYON ===
 async def _get_google_ai_studio_response(prompts):
-    if not GOOGLE_API_KEY:
-        return "Google AI Studio API anahtarı eksik."
-
-    # Google'ın beklediği veri formatı: {'role': 'user', 'parts': [{'text': '...'}]}
-    # Sistem mesajı 'role' olarak desteklenmiyor.
-    # Bu yüzden sistem prompt'unu alıp, kullanıcının ilk mesajının başına ekliyoruz.
-    system_prompt_text = ""
-    user_contents = []
-    
-    # Gelen prompt listesini dolaş
-    for p in prompts:
-        if p["role"] == "system":
-            system_prompt_text = p["content"]
-        else:
-            # Sadece 'user' ve 'model' (asistan) rollerini ekle
-            user_contents.append({"role": "user" if p["role"] == "user" else "model", "parts": [{"text": p["content"]}]})
-
-    # Eğer sistem mesajı varsa, onu ilk kullanıcı mesajının başına ekle
-    if system_prompt_text and user_contents:
-        user_contents[0]["parts"][0]["text"] = f"{system_prompt_text}\n\n--- KULLANICI MESAJI ---\n{user_contents[0]['parts'][0]['text']}"
-
-    # Doğru URL ve payload
+    if not GOOGLE_API_KEY: return "Google AI Studio API anahtarı eksik."
+    formatted_contents = [{"parts": [{"text": p["content"]}], "role": p["role"]} for p in prompts]
+    if formatted_contents[0]["role"] == "system":
+        system_prompt_text = formatted_contents.pop(0)["parts"][0]["text"]
+        formatted_contents[0]["parts"][0]["text"] = system_prompt_text + "\n\nKULLANICI MESAJI:\n" + formatted_contents[0]["parts"][0]["text"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GOOGLE_API_KEY}"
-    payload = {"contents": user_contents}
-    
-    async with httpx.AsyncClient() as c:
-        r = await c.post(url, json=payload, timeout=60)
-        r.raise_for_status() # Hata varsa exception fırlatır
-        # Cevabın doğru kısmını al
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    payload = {"contents": formatted_contents}
+    async with httpx.AsyncClient() as c: r = await c.post(url, json=payload, timeout=60); r.raise_for_status(); return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-# === AKILLI AI YÖNLENDİRİCİ (RATE LIMIT HANDLER İLE) ===
+# --- DÜZELTİLMİŞ Akıllı AI Yönlendirici ---
 async def get_ai_response(prompts):
     max_retries = 3; delay = 2
     for attempt in range(max_retries):
@@ -117,12 +103,12 @@ async def get_ai_response(prompts):
             elif current_model == "venice": return await _get_venice_response(prompts)
             else: return await _get_openrouter_response(prompts)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                logger.warning(f"Rate limit aşıldı (429). {delay} saniye bekleniyor...")
+            # HATAYI DAHA DETAYLI LOGLA
+            logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - Yanıt: {e.response.text}")
+            if e.response.status_code == 429: # Rate limit
                 if attempt < max_retries - 1: await asyncio.sleep(delay); delay *= 2; continue
                 else: return "API şu anda çok yoğun. Lütfen bir dakika sonra tekrar dene."
             else:
-                logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
                 return f"API sunucusundan bir hata geldi ({e.response.status_code}). Model adı veya API anahtarında sorun olabilir."
         except Exception as e:
             logger.error(f"AI API genel hatası ({current_model}): {e}", exc_info=True)
@@ -190,7 +176,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel_main$"))
     app.add_handler(CallbackQueryHandler(show_ai_model_menu, pattern="^admin_select_ai$")); app.add_handler(CallbackQueryHandler(set_ai_model, pattern="^ai_model_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    logger.info(f"DarkJarvis (v5.0 - Gemini 1.5 Pro Düzeltmesi) başarıyla başlatıldı!"); app.run_polling()
+    logger.info(f"DarkJarvis (v5.1 - Gelişmiş Hata Yönetimi) başarıyla başlatıldı!"); app.run_polling()
 if __name__ == '__main__':
     try: main()
     except Exception as e: logger.critical(f"Kritik hata: {e}", exc_info=True)
