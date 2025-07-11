@@ -70,16 +70,20 @@ async def get_ai_response(prompts):
     
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
     # === MODEL YÜKSELTME BURADA YAPILDI ===
-    # "google/gemini-flash-1.5" yerine daha güçlü bir model kullanıyoruz.
-    payload = {"model": "anthropic/claude-3.5-sonnet", "messages": prompts}
-    # Alternatif olarak deneyebilirsiniz: "meta-llama/llama-3.1-70b-instruct"
+    # En yeni ve güçlü Llama 3.1 modelini kullanıyoruz.
+    payload = {"model": "meta-llama/llama-3.1-70b-instruct", "messages": prompts}
     # ======================================
     
     try:
         async with httpx.AsyncClient() as c: 
-            r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40)
+            r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=60) # Timeout artırıldı
             r.raise_for_status()
             return r.json()["choices"][0]["message"]["content"]
+    except httpx.HTTPStatusError as e:
+        logger.error(f"AI API'den HTTP hatası: {e.response.status_code} - {e.response.text}")
+        if e.response.status_code == 402:
+            return "OpenRouter kredim bitmiş gibi görünüyor. Kurucum Uğur'a haber verin de bir el atsın. 💸"
+        return f"API sunucusundan bir hata geldi ({e.response.status_code})."
     except Exception as e: 
         logger.error(f"AI API hatası: {e}"); return "Beynimde bir kısa devre oldu galiba, sonra tekrar dene."
 
@@ -191,7 +195,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v15.4 - Model Yükseltmesi) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v17.0 - Llama 3.1 Entegrasyonu) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
