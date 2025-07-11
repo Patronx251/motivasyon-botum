@@ -76,22 +76,19 @@ async def _get_openrouter_response(prompts):
     async with httpx.AsyncClient() as c: r = await c.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 
 async def _get_venice_response(prompts, model_name: str):
-    """Genel Venice AI istek fonksiyonu."""
     if not VENICE_API_KEY: return "Venice AI API anahtarı eksik."
     url = "https://api.venice.ai/v1/chat/completions"; headers = {"Authorization": f"Bearer {VENICE_API_KEY}"}
     payload = {"model": model_name, "messages": prompts}
     async with httpx.AsyncClient() as c: r = await c.post(url, headers=headers, json=payload, timeout=40); r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
 
 async def get_ai_response(prompts):
-    """Aktif modele göre isteği doğru AI motoruna yönlendirir."""
     try:
         logger.info(f"AI isteği gönderiliyor. Aktif Model: {current_model.upper()}")
         if current_model == "venice-llama3":
             return await _get_venice_response(prompts, model_name="llama3-70b")
         elif current_model == "venice-uncensored":
-            # === YENİ: Uncensored modelini burada çağırıyoruz ===
-            return await _get_venice_response(prompts, model_name="uncensored/venice-v1.1")
-        # Varsayılan olarak OpenRouter kullanılır
+            # === MODEL ADI BURADA DÜZELTİLDİ ===
+            return await _get_venice_response(prompts, model_name="venice-uncensored-1.1") 
         return await _get_openrouter_response(prompts)
     except httpx.HTTPStatusError as e:
         logger.error(f"AI API'den HTTP hatası ({current_model}): {e.response.status_code} - {e.response.text}")
@@ -106,11 +103,10 @@ def get_eglence_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardBut
 def get_diger_menu_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("👤 Profilim", callback_data="cmd_profil"), InlineKeyboardButton("✨ İlham Verici Söz", callback_data="ai_alinti")], [InlineKeyboardButton("◀️ Ana Menüye Dön", callback_data="menu_main")]])
 def get_admin_menu_keyboard(): return InlineKeyboardMarkup([ [InlineKeyboardButton("📊 İstatistikler", callback_data="admin_stats")], [InlineKeyboardButton("📢 Grupları Yönet", callback_data="admin_list_groups")], [InlineKeyboardButton("📣 Herkese Duyuru", callback_data="admin_broadcast_ask")], [InlineKeyboardButton(f"🧠 AI Model ({current_model.upper()})", callback_data="admin_select_ai")], [InlineKeyboardButton("💾 Verileri Kaydet", callback_data="admin_save")]])
 def get_ai_model_menu_keyboard():
-    # === YENİ: Uncensored modeli butonu eklendi ===
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Google (OpenRouter)", callback_data="ai_model_openrouter")],
         [InlineKeyboardButton("Llama3 (Venice)", callback_data="ai_model_venice-llama3")],
-        [InlineKeyboardButton("Uncensored (Venice)", callback_data="ai_model_venice-uncensored")],
+        [InlineKeyboardButton("Uncensored 1.1 (Venice)", callback_data="ai_model_venice-uncensored")],
         [InlineKeyboardButton("◀️ Geri", callback_data="admin_panel_main")]
     ])
 
@@ -215,7 +211,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, record_group_chat))
 
-    logger.info(f"Motivasyon Jarvis (v18.0 - Uncensored Entegrasyonu) başarıyla başlatıldı!")
+    logger.info(f"Motivasyon Jarvis (v18.2 - Venice Model Fix) başarıyla başlatıldı!")
     app.run_polling()
 
 if __name__ == '__main__':
